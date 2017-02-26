@@ -1,0 +1,54 @@
+{
+ "currentVersion": 10.31,
+ "serviceDescription": "Frédéric Décrit",
+ "hasVersionedData": false,
+ "supportsDisconnectedEditing": false,
+ "syncEnabled": false,
+ "supportedQueryFormats": "JSON, AMF",
+ "maxRecordCount": 1000,
+ "capabilities": "Create,Query,Update,Delete,Uploads,Editing",
+ "description": "",
+ "copyrightText": "",
+ "spatialReference": {
+  "wkid": 102110,
+  "latestWkid": 2154
+ },
+ "initialExtent": {
+  "xmin": -4.5281927475859955E7,
+  "ymin": -2.6576759062821668E7,
+  "xmax": 4.6681927475859955E7,
+  "ymax": 3.9216530782956675E7,
+  "spatialReference": {
+   "wkid": 102110,
+   "latestWkid": 2154
+  }
+ },
+ "fullExtent": {
+  "xmin": -3.559735110962607E7,
+  "ymin": -2.3641742415426347E7,
+  "xmax": 3.699735110962607E7,
+  "ymax": 3.628151413556136E7,
+  "spatialReference": {
+   "wkid": 102110,
+   "latestWkid": 2154
+  }
+ },
+ "allowGeometryUpdates": true,
+ "units": "esriMeters",
+ "documentInfo": {
+  "Title": "",
+  "Author": "",
+  "Comments": "",
+  "Subject": "",
+  "Category": "",
+  "Keywords": ""
+ },
+ "layers": [
+  {
+   "id": 0,
+   "name": "geo_db.sde.TOWN"
+  }
+ ],
+ "tables": [],
+ "enableZDefaults": false
+}

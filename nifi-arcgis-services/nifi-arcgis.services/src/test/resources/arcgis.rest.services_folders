@@ -1,0 +1,21 @@
+{
+ "currentVersion": 10.31,
+ "folders": [
+  "arcopole",
+  "CARTO",
+  "ENEDIS",
+  "GEOTER",
+  "Utilities",
+  "VectorMapServices"
+ ],
+ "services": [
+  {
+   "name": "SampleWorldCities",
+   "type": "FeatureServer"
+  },
+  {
+   "name": "SampleWorldCities",
+   "type": "MapServer"
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+{
+ "currentVersion": 10.31,
+ "folders": [
+  "Utilities"
+ ],
+ "services": [
+  {
+   "name": "MyMapService",
+   "type": "FeatureServer"
+  },
+  {
+   "name": "MyMapService",
+   "type": "MapServer"
+  },
+  {
+   "name": "SampleWorldCities",
+   "type": "MapServer"
+  }
+ ]
+}
