@@ -3,6 +3,8 @@
  */
 package nifi.arcgis.service.arcgis.services.json;
 
+import static  nifi.arcgis.service.arcgis.services.json.NetworkUtility.isReachable;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -10,6 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -58,13 +61,14 @@ public class ArcGISServicesData {
 			while ((output = br.readLine()) != null) {
 				sb.append(output);
 			}
-
 			conn.disconnect();
 
 		} catch (MalformedURLException e) {
-			e.printStackTrace();
+			logger.error(Arrays.toString(e.getStackTrace()));
+			throw e;
 		} catch (IOException e) {
-			e.printStackTrace();
+			logger.error(Arrays.toString(e.getStackTrace()));
+			throw e;
 		} 
 		return sb.toString();			
 	}
@@ -101,6 +105,11 @@ public class ArcGISServicesData {
 	 * @exception Exception occurs during the network invocation
 	 */
 	public Set<String> retrieveFeatureServer(final String address) throws Exception {
+
+		if (!isReachable(address)) {
+			throw new Exception(address + " is actually unrechable!");
+		}
+		
 		return getFeatureServer(restCall(address));
 	}
 
@@ -110,7 +119,7 @@ public class ArcGISServicesData {
 	 * @return set of featureServers available
 	 */
 	public Set<String> getFeatureServer(final String json) {
-		logger.debug("reading JSON " + json);
+		logger.debug("reading JSON : " + json);
 		JSONArray services = JsonPath.parse(json).read("$.services.*", JSONArray.class);
 		Set<String> featureServers = new HashSet<String>();
 		for (int i = 0; i < services.size(); i++) {

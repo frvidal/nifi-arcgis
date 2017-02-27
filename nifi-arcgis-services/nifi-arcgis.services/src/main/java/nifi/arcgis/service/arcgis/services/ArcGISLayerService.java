@@ -135,7 +135,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
     	PropertyValue layerName = validationContext.getProperty(LAYER_NAME);
     	if (getLogger().isDebugEnabled()) {
     		getLogger().debug("validate the URL " + url.toString() 
-    		+ ( folderServer.getValue().isEmpty() ? "" : (" in the folder " + folderServer.getValue()) ) 
+    		+ ( (folderServer == null) ? "" : (" in the folder " + folderServer.getValue()) ) 
     		+ " for the featureServer " + featureServer.getValue() 
     		+ " and the layer " + layerName.getValue()); 
     	}
@@ -145,6 +145,8 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
     	if (results.size() == 0) {
     		results.add(result);
     	} else {
+    		results.clear();
+    		results.add(result);
     	}
     	return results;	
     }

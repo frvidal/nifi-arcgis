@@ -117,7 +117,7 @@ public class ArcGISConnector {
 
 			ArcGISServicesData dataArcGIS = new ArcGISServicesData(logger);
 
-			if ((folderServer != null) & folderServer.isEmpty()) {
+			if ((folderServer != null) && folderServer.isEmpty()) {
 				currentRestResource = arcgisURL + MessageFormat.format(URL_REST_SERVICES, "");
 				currentSubject = "folder server";
 
@@ -187,9 +187,6 @@ public class ArcGISConnector {
 			featureTable.addDoneLoadingListener(listener);
 		} catch (final Exception e) {
 			logger.error("Rest resources unreachable " + currentRestResource);
-			// ExceptionUtils.getStackTrace(e);
-//			StringWriter sw = new StringWriter();
-//			e.printStackTrace(new PrintWriter(sw));
 			logger.error(ExceptionUtils.getStackTrace(e));
 			return builder.input(currentRestResource).explanation(e.getMessage()).valid(false).subject(currentSubject)
 					.build();

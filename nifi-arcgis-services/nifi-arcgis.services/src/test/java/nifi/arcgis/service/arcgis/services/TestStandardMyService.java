@@ -53,8 +53,8 @@ public class TestStandardMyService {
 
     @Test
     public void testSetPropertyBadUrl() throws InitializationException {
-    	if (true) return;
-        assertFalse("onPropertyModified has not been called", ((ArcGISLayerService) service).isOpmCalled());
+
+    	assertFalse("onPropertyModified has not been called", ((ArcGISLayerService) service).isOpmCalled());
 
         final String BAD_URL = "a-bad-url";
         ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, BAD_URL);
