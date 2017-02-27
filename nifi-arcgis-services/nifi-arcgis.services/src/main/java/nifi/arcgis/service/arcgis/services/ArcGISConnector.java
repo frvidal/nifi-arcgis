@@ -171,7 +171,11 @@ public class ArcGISConnector {
 							logger.debug("\t" + f.getName() + " " + f.getFieldType());
 						}
 					}
-					builder.valid(true);
+					if (featureTable.isEditable()) {
+						builder.input(featureTable.getTableName()).subject("layer name").explanation( featureTable.getTableName() + " is read-only !").valid(false);
+					} else {
+						builder.valid(true);
+					}
 				}
 				if (ls.equals(LoadStatus.FAILED_TO_LOAD) || ls.equals(LoadStatus.NOT_LOADED)) {
 					logger.debug("URL Load failed ", featureTable.getLoadError());
