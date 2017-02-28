@@ -55,7 +55,6 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 	            .required(true)
 	            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 	            .addValidator(StandardValidators.URL_VALIDATOR)
-//	            .addValidator(  (String subject, String input, ValidationContext context) -> checkURL(subject, input, context))
 	            .build();
 
 	public static final PropertyDescriptor FOLDER_SERVER = new PropertyDescriptor
@@ -79,10 +78,18 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
+	/**
+	 * This boolean is used to test the entrance in the OnPropertyChange method for test purpose
+	 */
 	private boolean opmCalled = false;
     
     private static final List<PropertyDescriptor> properties;
 
+	/**
+	 * layer rank search and retrieve from the server with the name 
+	 */
+	private int layerRank;
+ 
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
         props.add(ARCGIS_URL);
@@ -134,7 +141,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
     	PropertyValue featureServer = validationContext.getProperty(FEATURE_SERVER);
     	PropertyValue layerName = validationContext.getProperty(LAYER_NAME);
     	if (getLogger().isDebugEnabled()) {
-    		getLogger().debug("validate the URL " + url.toString() 
+    		getLogger().debug("validating the URL " + url.toString() 
     		+ ( (folderServer == null) ? "" : (" in the folder " + folderServer.getValue()) ) 
     		+ " for the featureServer " + featureServer.getValue() 
     		+ " and the layer " + layerName.getValue()); 
@@ -142,12 +149,11 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
     	List<ValidationResult> results = new ArrayList<ValidationResult>();
 		ArcGISConnector connector = new ArcGISConnector(getLogger(), url.getValue(), folderServer.getValue(), featureServer.getValue(), layerName.getValue());
     	ValidationResult result = connector.checkConnection();
-    	if (results.size() == 0) {
-    		results.add(result);
-    	} else {
-    		results.clear();
-    		results.add(result);
-    	}
+    	if (result.isValid()) {
+    		layerRank = connector.getLayerRank();
+    	} 
+    	// results.clear(); ?
+    	results.add(result);
     	return results;	
     }
     
@@ -175,73 +181,6 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
     public void execute() throws ProcessException {
 
     }
-
-    public static ValidationResult OUTSITE_checkFeatureUrl(final String subject, final String input, final ValidationContext context) { 
-
-    	
-    	Builder builder = new ValidationResult.Builder().subject("featureTable REST URL");
-    	if (input == null) {
-    		return builder.subject(subject).input(input).explanation("URL is required").valid(false).build();
-    	}
-    	
-    	ControllerServiceLookup lookupTmp = context.getControllerServiceLookup();
-    	Set<String> identifiersTmp =  lookupTmp.getControllerServiceIdentifiers(ControllerService.class);
-    	if(identifiersTmp.size()==0) System.out.println("No identifiers found for ControllerService");
-    	Iterator<String> itTmp = identifiersTmp.iterator();
-    	ControllerService service = null;
-    	boolean found = false;
-    	while(itTmp.hasNext())
-    	{
-
-    	    String id = itTmp.next();
-    	    String name = lookupTmp.getControllerServiceName(id);
-    	    service = lookupTmp.getControllerService(id);
-    	    Method[] methods = service.getClass().getMethods();
-    	    
-    	    // public static java.lang.Class java.lang.reflect.Proxy.getProxyClass(java.lang.ClassLoader,java.lang.Class[]) throws java.lang.IllegalArgumentException
-    	    // public static boolean java.lang.reflect.Proxy.isProxyClass(java.lang.Class)
-    	    
-    	    
-    		for (int i = 0; i < methods.length; i++) {
-    			System.out.println("public method: " + methods[i]);
-    			
-    		}
-    	    
-    		System.out.println(service.getClass().getName());
-    	    
-    	    System.out.println("top");
-    	    
-    	}    	
-    	
-    	
-    	ArcGISLayerService arcgisService = null;
-    	
-    	ControllerServiceLookup lookup = context.getControllerServiceLookup();
-    	Set<String> identifiers =  lookup.getControllerServiceIdentifiers(ControllerService.class);
-    	Iterator<String> it = identifiers.iterator();
-    	while (it.hasNext()) {
-    		String id = it.next();
-    		
-    		/**
-    		 * I do not filter directly with the class signature ArcGISLayerService.
-    		 * The set is empty with this class, which appears on the frame-set throught a proxy
-    		 * We keep a debug trace as an explanation
-    		 */
-    		ControllerService controllerService = lookup.getControllerService(id);
-    		
-    		if (controllerService instanceof ArcGISLayerService) {
-    			arcgisService = (ArcGISLayerService) controllerService;
-    			break;
-    		}
-    	}
-    	if (arcgisService == null) {
-    		return builder.explanation("Invalid state detected in ArcGISLayerServiceImpl. RuntimeError").valid(false).build();    		
-    	}
-    	
-    	arcgisService.getLogger().debug(arcgisService.getClass().toString());
-    	
-    	return null; //  arcgisService.checkFeatureUrl (input);
-    } 
 
     @Override
     protected void init(ControllerServiceInitializationContext config) throws InitializationException {
