@@ -10,12 +10,15 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.Charset;
 
+
 /**
  * @author Fr&eacute;d&eacute;ric VIDAL
  *
  */
 public class FileManager {
-
+	
+	private static final char LN = System.getProperty ("line.separator").charAt(0);
+	
 	/**
 	 * @param inputStream inputStream of a flowFile
 	 * @return content of the inputStream
@@ -29,6 +32,31 @@ public class FileManager {
 	    } finally {
 	      inputStream.close();
 	    }
+	  }
+
+	/**
+	 * Read a simple line from the reader.
+	 * @param reader 
+	 * @return a StringBuilder containing one line from the reader, or <code>null</code> if we reached the end of the file
+	 * @throws IOException 
+	 */
+	public static StringBuilder readLine(Reader reader) throws IOException {
+	
+		// Have we reached the end of the file ?
+		boolean eof = true;
+	    
+		StringBuilder sb = new StringBuilder();
+	    int cp;
+	    while ((cp = reader.read()) != -1) {
+	    	
+	    	eof = false;
+	    	
+	    	// End of line
+	    	if (cp == LN) break;
+	    	
+	    	sb.append((char) cp);
+	    }
+	    return (eof ? null : sb);
 	  }
 
 	/**

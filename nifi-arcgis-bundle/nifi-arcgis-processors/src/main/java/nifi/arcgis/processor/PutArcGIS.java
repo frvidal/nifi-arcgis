@@ -16,13 +16,18 @@
  */
 package nifi.arcgis.processor;
 
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -42,6 +47,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
+import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
 
 /**
@@ -110,7 +116,10 @@ public class PutArcGIS extends AbstractProcessor {
     
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
-        final FlowFile flowFile = session.get();
+ 
+    	final AtomicReference<Map<Integer, List<String>>> result = new AtomicReference<Map<Integer, List<String>>>();
+    	
+    	final FlowFile flowFile = session.get();
         if ( flowFile == null ) {
             return;
         }
@@ -119,11 +128,21 @@ public class PutArcGIS extends AbstractProcessor {
         data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
         
         session.read(flowFile, (InputStream inputStream) -> {
-            	StringBuilder sb = FileManager.read(inputStream);
-            	getLogger().debug("File content ");
-            	getLogger().debug(sb.toString());
+        		Map<Integer, List<String>> lines = new HashMap<Integer, List<String>>();
+        		BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, Charset.forName("UTF-8")));
+        		StringBuilder sb;
+            	int lineNumber = 0;
+        		while ( (sb = FileManager.readLine(reader)) != null) {
+        			getLogger().debug("parsing the CSV line " + sb.toString());
+            		List<String> line = CsvManager.parseLine(sb.toString(), ';');
+            		lines.put(lineNumber++, line);
+            	};
+            	result.set(lines);
         });
   
+        getLogger().debug(String.valueOf(result.get().size()));
+        result.get().forEach( (key, value) -> { for (String s : value) getLogger().debug(s); } );
+        
   /*      
         session.read(flowFile, new InputStreamCallback() {
             @Override

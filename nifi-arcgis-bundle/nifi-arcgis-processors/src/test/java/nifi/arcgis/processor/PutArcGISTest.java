@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package nifi.arcgis.processor.processors.arcgis;
+package nifi.arcgis.processor;
 
 import java.io.File;
 import java.io.FileInputStream;

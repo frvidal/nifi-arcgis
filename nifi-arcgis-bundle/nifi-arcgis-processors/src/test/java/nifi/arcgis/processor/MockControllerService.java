@@ -1,4 +1,4 @@
-package nifi.arcgis.processor.processors.arcgis;
+package nifi.arcgis.processor;
 
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.processor.exception.ProcessException;
