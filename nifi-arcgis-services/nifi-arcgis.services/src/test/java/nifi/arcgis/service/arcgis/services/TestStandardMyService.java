@@ -17,16 +17,20 @@
 package nifi.arcgis.service.arcgis.services;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import java.io.IOException;
 
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.reporting.InitializationException;
-import org.apache.nifi.util.MockComponentLog;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
+
+import nifi.arcgis.service.arcgis.services.json.NetworkUtility;
 
 public class TestStandardMyService {
 
@@ -71,14 +75,15 @@ public class TestStandardMyService {
     }
 
     @Test
-    public void testSetPropertyGoodUrlServerDown() throws InitializationException {
-    	if (true) return;
+    public void testSetPropertyGoodUrlServerDown() throws InitializationException, IOException {
    	
         assertFalse("onPropertyModified has not been called", ((ArcGISLayerService) service).isOpmCalled());
 
-        final String GOOD_URL = "http://arcgis-server:6080/arcgis/rest/services/MyMapService/FeatureServer/0";
-        ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL,GOOD_URL);
-        assertFalse (vr.isValid());
+        final String GOOD_URL = "http://arcgis-server-ko:6080/arcgis/rest/services/MyMapService/FeatureServer/0";
+        ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, GOOD_URL);
+        assertTrue (vr.isValid());
+        
+        assertFalse( NetworkUtility.isReachable(GOOD_URL));
     }
     
 }

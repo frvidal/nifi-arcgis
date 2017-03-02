@@ -27,9 +27,16 @@ public class PutArcGISTest {
     private TestRunner testRunner;
 
     @Before
-    public void init() {
+    public void init() throws Exception {
         testRunner = TestRunners.newTestRunner(PutArcGIS.class);
-//        testRunner.run();
+        testRunner.setProperty(PutArcGIS.MY_PROPERTY, "value MyProperty");
+        testRunner.setProperty(PutArcGIS.ARCGIS_SERVICE, "arcgis-service");
+		
+        MockControllerService service = new MockControllerService();
+        testRunner.addControllerService("arcgis-service", service);
+        testRunner.enableControllerService(service);
+        
+        testRunner.run();
     }
 
     @Test

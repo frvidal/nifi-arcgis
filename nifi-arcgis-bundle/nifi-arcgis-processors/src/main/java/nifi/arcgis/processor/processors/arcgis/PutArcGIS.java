@@ -16,21 +16,31 @@
  */
 package nifi.arcgis.processor.processors.arcgis;
 
-import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.processor.*;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.ProcessorInitializationContext;
+import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-
-import java.util.*;
 
 /**
  * @author frvidal
@@ -51,15 +61,15 @@ public class PutArcGIS extends AbstractProcessor {
             .build();
     
     public static final PropertyDescriptor MY_PROPERTY = new PropertyDescriptor
-            .Builder().name("My Property")
-            .description("Example Property")
+            .Builder().name("TYPE")
+            .description("Example...Property")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     
-    public static final Relationship MY_RELATIONSHIP = new Relationship.Builder()
-            .name("my_relationship")
-            .description("Example relationship")
+    public static final Relationship SUCCESS = new Relationship.Builder()
+            .name("SUCCESS")
+            .description("Success relationship")
             .build();
 
     private List<PropertyDescriptor> descriptors;
@@ -74,7 +84,7 @@ public class PutArcGIS extends AbstractProcessor {
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
-        relationships.add(MY_RELATIONSHIP);
+        relationships.add(SUCCESS);
         this.relationships = Collections.unmodifiableSet(relationships);
     }
 
@@ -97,10 +107,28 @@ public class PutArcGIS extends AbstractProcessor {
     
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
-        FlowFile flowFile = session.get();
+        final FlowFile flowFile = session.get();
         if ( flowFile == null ) {
             return;
         }
-        // TODO implement
+        getLogger().debug("onTrigger");
+        Map<String, String> data = flowFile.getAttributes();
+        data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
+        
+        session.read(flowFile, (InputStream inputStream) -> {
+            	StringBuilder sb = UtilFile.read(inputStream);
+            	getLogger().debug(sb.toString());
+        });
+  
+  /*      
+        session.read(flowFile, new InputStreamCallback() {
+            @Override
+            public void process(InputStream inputStream) throws IOException {
+            	StringBuilder sb = UtilFile.read(inputStream);
+            	getLogger().debug(sb.toString());
+            }
+        });
+  */      
+        session.transfer(flowFile, SUCCESS);
     }
 }

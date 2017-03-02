@@ -1,29 +1,17 @@
 package nifi.arcgis.service.arcgis.services;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.logging.ComponentLog;
-import org.bouncycastle.crypto.modes.gcm.Tables1kGCMExponentiator;
 
-import com.esri.arcgisruntime.data.FeatureType;
 import com.esri.arcgisruntime.data.Field;
 import com.esri.arcgisruntime.data.ServiceFeatureTable;
-import com.esri.arcgisruntime.layers.FeatureLayer;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 
 import nifi.arcgis.service.arcgis.services.json.ArcGISServicesData;
@@ -36,14 +24,15 @@ public class ArcGISConnector {
 	final static private String URL_REST_LAYERS = "/arcgis/rest/services/{0}/FeatureServer?f=pjson";
 
 	final static private String URL_SERVICE_FEATURE_TABLE = "/arcgis/rest/services/{0}/MapServer/{1}";
-	
+
 	/**
 	 * ArcGIS URL :
 	 */
 	private final String arcgisURL;
 
 	/**
-	 * folderServer : folder where the featureServers are located inside the root.
+	 * folderServer : folder where the featureServers are located inside the
+	 * root.
 	 */
 	private final String folderServer;
 
@@ -58,11 +47,10 @@ public class ArcGISConnector {
 	private final String layerName;
 
 	/**
-	 * layer rank search and retrieve from the server with the name 
+	 * layer rank search and retrieve from the server with the name
 	 */
 	private int layerRank;
-	
-	
+
 	/**
 	 * Apache NIFI logger
 	 */
@@ -72,21 +60,19 @@ public class ArcGISConnector {
 	 * Main constructor
 	 * 
 	 * @param nifiLogger
-	 *            : Main logger plugged into the NIFI framework 
+	 *            : Main logger plugged into the NIFI framework
 	 * @param arcgisURL
 	 *            : URL of the ArcGIS server
 	 * @param folderServer
-	 *            : Folder name starting from the root directory where the featureServers are located
+	 *            : Folder name starting from the root directory where the
+	 *            featureServers are located
 	 * @param featureServer
 	 *            : Name of the FeatureServer
 	 * @param layerName
 	 *            : Name of the layer inside the ArcGIS database
 	 */
-	public ArcGISConnector(ComponentLog nifiLogger, 
-			final String arcgisURL, 
-			final String folderServer, 
-			final String featureServer,
-			final String layerName) {
+	public ArcGISConnector(ComponentLog nifiLogger, final String arcgisURL, final String folderServer,
+			final String featureServer, final String layerName) {
 		this.logger = nifiLogger;
 		this.arcgisURL = arcgisURL;
 		this.folderServer = folderServer;
@@ -129,31 +115,33 @@ public class ArcGISConnector {
 				if (!registeredFolders.contains(folderServer)) {
 					throw new Exception("The folder " + folderServer + " does not exist on the server " + arcgisURL);
 				}
-				
+
 			}
 
-			currentRestResource = arcgisURL + MessageFormat.format(URL_REST_SERVICES, 
-					((folderServer == null) || folderServer.isEmpty()) ? "" : folderServer );
+			currentRestResource = arcgisURL + MessageFormat.format(URL_REST_SERVICES,
+					((folderServer == null) || folderServer.isEmpty()) ? "" : folderServer);
 			currentSubject = "featureLayer name";
 			Set<String> registeredFeatureLayers = dataArcGIS.retrieveFeatureServer(currentRestResource);
 			if (!registeredFeatureLayers.contains(featureServer)) {
 				throw new Exception("The feature " + featureServer + " does not exist on the server " + arcgisURL);
 			}
-			
-			
+
 			currentRestResource = arcgisURL + MessageFormat.format(URL_REST_LAYERS, featureServer);
 			currentSubject = "layer name";
 			Set<Layer> registeredLayers = dataArcGIS.retrieveLayers(currentRestResource);
-			Optional<Layer> oLayer = registeredLayers.stream().filter(layer -> layer.name.equals(layerName)).findFirst();
+			Optional<Layer> oLayer = registeredLayers.stream().filter(layer -> layer.name.equals(layerName))
+					.findFirst();
 			if (!oLayer.isPresent()) {
-				throw new Exception("The layer " + layerName + " does not exist on the featureServer " + featureServer + " within the ArcGIS server " +  arcgisURL);				
+				throw new Exception("The layer " + layerName + " does not exist on the featureServer " + featureServer
+						+ " within the ArcGIS server " + arcgisURL);
 			}
 			if (logger.isDebugEnabled()) {
 				logger.debug("Found the layer ID " + oLayer.get().id + " for the layer name " + layerName);
 			}
 			layerRank = oLayer.get().id;
-			
-			currentRestResource = arcgisURL + MessageFormat.format(URL_SERVICE_FEATURE_TABLE, featureServer, oLayer.get().id);
+
+			currentRestResource = arcgisURL
+					+ MessageFormat.format(URL_SERVICE_FEATURE_TABLE, featureServer, oLayer.get().id);
 			ServiceFeatureTable featureTable = new ServiceFeatureTable(currentRestResource);
 			logger.info("Loading asynchronous the featureTable from " + currentRestResource + "...");
 			featureTable.loadAsync();
@@ -175,9 +163,10 @@ public class ArcGISConnector {
 							logger.debug("\t" + f.getName() + " " + f.getFieldType());
 						}
 					}
-					
-					if (featureTable.isEditable()) {
-						builder.input(featureTable.getTableName()).subject("layer name").explanation( featureTable.getTableName() + " is read-only !").valid(false);
+
+					if (!featureTable.isEditable()) {
+						builder.input(featureTable.getTableName()).subject("layer name")
+								.explanation(featureTable.getTableName() + " is read-only !").valid(false);
 					} else {
 						builder.valid(true);
 					}
@@ -191,13 +180,14 @@ public class ArcGISConnector {
 					builder.subject("url ArcGIS & layer name").input(arcgisURL).explanation(errorMessage).valid(false);
 				}
 				/*
-				 * This status release the final infinite-loop before returning back to the NIFI framework 
+				 * This status release the final infinite-loop before returning
+				 * back to the NIFI framework
 				 */
 				checkConnectionFinished = true;
 			};
 
 			featureTable.addDoneLoadingListener(listener);
-			
+
 		} catch (final Exception e) {
 			logger.error("Rest resource unreachable " + currentRestResource);
 			logger.error(ExceptionUtils.getStackTrace(e));
