@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package nifi.arcgis.processor.processors.arcgis;
+package nifi.arcgis.processor;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -42,6 +42,8 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
+import nifi.arcgis.processor.utility.FileManager;
+
 /**
  * @author frvidal
  *
@@ -60,10 +62,11 @@ public class PutArcGIS extends AbstractProcessor {
             .identifiesControllerService(nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.class)
             .build();
     
-    public static final PropertyDescriptor MY_PROPERTY = new PropertyDescriptor
+    public static final PropertyDescriptor TYPE_OF_FILE = new PropertyDescriptor
             .Builder().name("TYPE")
-            .description("Example...Property")
+            .description("Type of file to import into ArcGIS\nCSV files require a header with the target column name")
             .required(true)
+            .allowableValues("CSV", "JSON")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     
@@ -80,7 +83,7 @@ public class PutArcGIS extends AbstractProcessor {
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(ARCGIS_SERVICE);
-        descriptors.add(MY_PROPERTY);
+        descriptors.add(TYPE_OF_FILE);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -116,7 +119,8 @@ public class PutArcGIS extends AbstractProcessor {
         data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
         
         session.read(flowFile, (InputStream inputStream) -> {
-            	StringBuilder sb = UtilFile.read(inputStream);
+            	StringBuilder sb = FileManager.read(inputStream);
+            	getLogger().debug("File content ");
             	getLogger().debug(sb.toString());
         });
   

@@ -1,7 +1,7 @@
 /**
  * 
  */
-package nifi.arcgis.processor.processors.arcgis;
+package nifi.arcgis.processor.utility;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,7 +14,7 @@ import java.nio.charset.Charset;
  * @author Fr&eacute;d&eacute;ric VIDAL
  *
  */
-public class UtilFile {
+public class FileManager {
 
 	/**
 	 * @param inputStream inputStream of a flowFile

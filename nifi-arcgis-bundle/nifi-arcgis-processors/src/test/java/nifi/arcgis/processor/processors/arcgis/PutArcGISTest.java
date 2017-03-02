@@ -16,20 +16,30 @@
  */
 package nifi.arcgis.processor.processors.arcgis;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
+import nifi.arcgis.processor.PutArcGIS;
+
 
 public class PutArcGISTest {
 
-    private TestRunner testRunner;
+	static {
+		System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug");
+	}
+
+	private TestRunner testRunner;
 
     @Before
     public void init() throws Exception {
         testRunner = TestRunners.newTestRunner(PutArcGIS.class);
-        testRunner.setProperty(PutArcGIS.MY_PROPERTY, "value MyProperty");
+        testRunner.setProperty(PutArcGIS.TYPE_OF_FILE, "CSV");
         testRunner.setProperty(PutArcGIS.ARCGIS_SERVICE, "arcgis-service");
 		
         MockControllerService service = new MockControllerService();
@@ -40,8 +50,19 @@ public class PutArcGISTest {
     }
 
     @Test
-    public void testProcessor() {
-
+    public void testProcessorSimpleCSV() throws Exception {
+    	
+    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris.csv");
+    
+    	// Add the content to the runner
+    	testRunner.enqueue(content);
+    	
+    	// Launch the runner
+    	testRunner.run(1);
+    	
+    	testRunner.assertQueueEmpty();
+    	
+    	
     }
 
 }
