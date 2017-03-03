@@ -16,10 +16,12 @@
  */
 package nifi.arcgis.service.arcgis.services;
 
+import java.util.List;
+import java.util.Map;
+
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
-import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.exception.ProcessException;
 
 @Tags({"put"})
@@ -27,9 +29,21 @@ import org.apache.nifi.processor.exception.ProcessException;
 public interface ArcGISLayerServiceAPI extends ControllerService {
 
 	/**
-	 * Process the flow
-	 * @throws ProcessException
+	 * <p> 
+	 * Validate the header for <b>CSV file</b> : The header must contain the list of column names for the targeted featureService.
+	 * </p>
+	 * @param header the header parsed from the CSV in a list of string
+	 * @return <code>TRUE</code> if this header match the columns list available for this feature serve, <code>FALSE</code> otherwise
+     * @throws ProcessException thrown if any problems occurs during execution
 	 */
-    public void execute()  throws ProcessException;
+    public boolean isHeaderValid(List<String> header) throws ProcessException;
 
+    /**
+     * process a record
+     * @param record in a Map Format
+     * @throws ProcessException thrown if any problems occurs during execution
+     */
+    public void execute(Map<String, String> record)  throws ProcessException;
+    
+    
 }

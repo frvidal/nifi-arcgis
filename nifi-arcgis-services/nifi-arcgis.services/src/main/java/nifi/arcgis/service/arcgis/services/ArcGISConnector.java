@@ -2,6 +2,7 @@ package nifi.arcgis.service.arcgis.services;
 
 import java.net.URL;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -23,7 +24,7 @@ public class ArcGISConnector {
 
 	final static private String URL_REST_LAYERS = "/arcgis/rest/services/{0}/FeatureServer?f=pjson";
 
-	final static private String URL_SERVICE_FEATURE_TABLE = "/arcgis/rest/services/{0}/MapServer/{1}";
+	final static private String URL_SERVICE_FEATURE_TABLE = "/arcgis/rest/services/{0}/FeatureServer/{1}";
 
 	/**
 	 * ArcGIS URL :
@@ -55,6 +56,11 @@ public class ArcGISConnector {
 	 * Apache NIFI logger
 	 */
 	private final ComponentLog logger;
+
+	/**
+	 * List of fields in the featureTable, loaded during the table initialization
+	 */
+	private final List<ArcGISTableField> associateFields = new ArrayList<ArcGISTableField>();
 
 	/**
 	 * Main constructor
@@ -168,6 +174,8 @@ public class ArcGISConnector {
 						builder.input(featureTable.getTableName()).subject("layer name")
 								.explanation(featureTable.getTableName() + " is read-only !").valid(false);
 					} else {
+						associateFields.clear();
+						featureTable.getFields().forEach( field -> associateFields.add(new ArcGISTableField(field.getName(), field.getFieldType())));
 						builder.valid(true);
 					}
 				}
@@ -213,5 +221,13 @@ public class ArcGISConnector {
 	public int getLayerRank() {
 		return layerRank;
 	}
+	
+	/**
+	 * @return return the list of Fields loaded on the featureTable
+	 */
+	public List<ArcGISTableField> getAssociateFields() {
+		return associateFields;
+	}
+	
 
 }

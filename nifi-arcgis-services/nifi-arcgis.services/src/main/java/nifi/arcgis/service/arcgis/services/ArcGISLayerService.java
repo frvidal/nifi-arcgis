@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -69,9 +71,14 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 	private static final List<PropertyDescriptor> properties;
 
 	/**
-	 * layer rank search and retrieve from the server with the name
+	 * working layer rank searched, and retrieved from the ArcGIS Server by its name
 	 */
 	private int layerRank;
+	
+	/**
+	 * List of tableFields available on this current working layer
+	 */
+	private List<ArcGISTableField> tableFields;
 
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
@@ -137,6 +144,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		ValidationResult result = connector.checkConnection();
 		if (result.isValid()) {
 			layerRank = connector.getLayerRank();
+			tableFields = connector.getAssociateFields();
 		}
 		// results.clear(); ?
 		results.add(result);
@@ -163,10 +171,6 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	}
 
-	@Override
-	public void execute() throws ProcessException {
-
-	}
 
 	@Override
 	protected void init(ControllerServiceInitializationContext config) throws InitializationException {
@@ -182,6 +186,37 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 	 */
 	public boolean isOpmCalled() {
 		return opmCalled;
+	}
+
+	@Override
+	public boolean isHeaderValid(List<String> header) throws ProcessException {
+		
+		if (getLogger().isDebugEnabled()) {
+			getLogger().debug ("Comparing header fields in the CSV and dataField in the ArcGIS FeatureTable");
+			StringBuilder sbArcGIS = new StringBuilder();
+			tableFields.forEach(field -> sbArcGIS.append(field.name).append(","));
+			getLogger().debug ("ArcGIS list : " + sbArcGIS.toString());
+			StringBuilder sbHeader = new StringBuilder();
+			header.forEach(field -> sbHeader.append(field).append(","));
+			getLogger().debug ("Header list : " + sbHeader.toString());
+		}
+
+		final AtomicReference<Boolean> found = new AtomicReference<Boolean>();
+		found.set(false);
+		for (String headerField : header) {
+			found.set(false);
+			tableFields.forEach(field -> { if (field.name.equals(headerField)) found.set(true); } );
+			if (!found.get()) {
+				getLogger().info("field " + headerField + " does not exist on this layer");
+				break;
+			}
+		}
+		return found.get();
+	}
+
+	@Override
+	public void execute(Map<String, String> record) throws ProcessException {
+		
 	}
 
 }

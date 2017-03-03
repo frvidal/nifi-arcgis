@@ -11,3 +11,6 @@ target/
 # shell scripts
 *.sh
 
+#working dir
+data/
+data_ko/

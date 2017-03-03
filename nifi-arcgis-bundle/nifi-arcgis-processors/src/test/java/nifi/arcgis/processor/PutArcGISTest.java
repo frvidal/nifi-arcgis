@@ -16,17 +16,18 @@
  */
 package nifi.arcgis.processor;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.List;
 
+import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
-import nifi.arcgis.processor.PutArcGIS;
-
+import junit.framework.AssertionFailedError;
+import static org.junit.Assert.assertEquals;
 
 public class PutArcGISTest {
 
@@ -50,19 +51,41 @@ public class PutArcGISTest {
     }
 
     @Test
-    public void testProcessorSimpleCSV() throws Exception {
+    public void testProcessorSimpleCSV_test_HEADERFAILED() throws Exception {
     	
-    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris.csv");
+    	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
+
+    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris_header_KO.csv");
     
     	// Add the content to the runner
     	testRunner.enqueue(content);
     	
     	// Launch the runner
     	testRunner.run(1);
+        testRunner.assertQueueEmpty();
+    	testRunner.assertValid();
     	
-    	testRunner.assertQueueEmpty();
+    	List<MockFlowFile> failedFiles = testRunner.getFlowFilesForRelationship(PutArcGIS.FAILED);
+    	assertEquals(1, failedFiles.size());
+
+    }
+
+    @Test
+    public void testProcessorSimpleCSV_test_HEADERPASSED() throws Exception {
+    	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
+    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
+    
+    	// Add the content to the runner
+    	testRunner.enqueue(content);
     	
+    	// Launch the runner
+    	testRunner.run(1);
+        testRunner.assertQueueEmpty();
+    	testRunner.assertValid();
+
+    	List<MockFlowFile> failedFiles = testRunner.getFlowFilesForRelationship(PutArcGIS.SUCCESS);
+    	assertEquals(1, failedFiles.size());
     }
 
 }
