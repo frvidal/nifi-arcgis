@@ -28,6 +28,10 @@ import org.apache.nifi.processor.exception.ProcessException;
 @CapabilityDescription("Data management accessor for ArcGIS server.")
 public interface ArcGISLayerServiceAPI extends ControllerService {
 
+	public final static String SPATIAL_REFERENCE = "SPATIAL_REFERENCE";
+	public final static String SPATIAL_REFERENCE_WGS84 = "Wgs84";
+	public final static String SPATIAL_REFERENCE_WEBMERCATOR = "WebMercator";
+
 	/**
 	 * <p> 
 	 * Validate the header for <b>CSV file</b> : The header must contain the list of column names for the targeted featureService.
@@ -39,11 +43,12 @@ public interface ArcGISLayerServiceAPI extends ControllerService {
     public boolean isHeaderValid(List<String> header) throws ProcessException;
 
     /**
-     * process a record
-     * @param record in a Map Format
+     * Process a record
+     * @param list of records in a Map Format (Key, Value)
+     * @param settings data settings (such as spatial reference)
      * @throws ProcessException thrown if any problems occurs during execution
      */
-    public void execute(Map<String, String> record)  throws ProcessException;
+    public void execute(List<Map<String, String>> record, final Map<String, Object> settings)  throws ProcessException;
     
     
 }

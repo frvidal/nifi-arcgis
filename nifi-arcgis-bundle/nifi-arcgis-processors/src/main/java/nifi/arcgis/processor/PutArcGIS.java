@@ -16,6 +16,9 @@
  */
 package nifi.arcgis.processor;
 
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
+
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -74,6 +77,10 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Type of file to import into ArcGIS\nCSV files require a header with the target column name")
 			.required(true).allowableValues(CSV, JSON).addValidator(StandardValidators.NON_EMPTY_VALIDATOR).build();
 
+	public static final PropertyDescriptor SPATIAL_REFERENCE = new PropertyDescriptor.Builder().name("Spatial reference")
+			.description("Type of spatial reference if necessary").allowableValues(SPATIAL_REFERENCE_WGS84,SPATIAL_REFERENCE_WEBMERCATOR).required(false).build();
+	
+	
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
 
@@ -89,6 +96,7 @@ public class PutArcGIS extends AbstractProcessor {
 		final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
 		descriptors.add(ARCGIS_SERVICE);
 		descriptors.add(TYPE_OF_FILE);
+		descriptors.add(SPATIAL_REFERENCE);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -150,8 +158,8 @@ public class PutArcGIS extends AbstractProcessor {
 			getLogger().debug("Number of lines read " + String.valueOf(result.get().size()));
 			
 			List<String> columnNames = result.get().get(0);
-			boolean headerValid = context.getProperty(ARCGIS_SERVICE).
-			asControllerService(ArcGISLayerServiceAPI.class).isHeaderValid(columnNames);
+			ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE).asControllerService(ArcGISLayerServiceAPI.class);
+			boolean headerValid = service.isHeaderValid(columnNames);
 			// The first line in the CSV files does not contain a valid list of columns inside the featureTable
 			if (!headerValid) {
 				StringBuffer sb = new StringBuffer();
@@ -161,6 +169,7 @@ public class PutArcGIS extends AbstractProcessor {
 				return;
 			}
 			
+			// service.execute(arg0, arg1);
 			
 			result.get().forEach((key, value) -> {
 				for (String s : value)

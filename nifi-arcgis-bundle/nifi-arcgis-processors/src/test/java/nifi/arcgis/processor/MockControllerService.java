@@ -23,12 +23,13 @@ public class MockControllerService extends AbstractControllerService implements 
 	public boolean isHeaderValid(List<String> arg0) throws ProcessException {
 		return headerValid;
 	}
-
+	
 	@Override
-	public void execute(Map<String, String> arg0) throws ProcessException {
+	public void execute(List<Map<String, String>> arg0, Map<String, Object> arg1) throws ProcessException {
 		// TODO Auto-generated method stub
 		
 	}
+
 
 	
 }

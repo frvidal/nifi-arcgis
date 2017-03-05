@@ -58,7 +58,8 @@ public class TestServicesProperties {
 		assertTrue(vr.isValid());
 		vr = runner.setProperty(service, LAYER_NAME, "geo_db.sde.TOWN");
 		assertTrue(vr.isValid());
-		// arcgis/rest/services
+		
+		// 
 		runner.assertValid(service);
 	}
 }
