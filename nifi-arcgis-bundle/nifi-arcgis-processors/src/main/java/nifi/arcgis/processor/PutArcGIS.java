@@ -16,8 +16,8 @@
  */
 package nifi.arcgis.processor;
 
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -49,6 +49,8 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+
+import com.esri.arcgisruntime.internal.jni.ex;
 
 import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
@@ -90,6 +92,11 @@ public class PutArcGIS extends AbstractProcessor {
 	private List<PropertyDescriptor> descriptors;
 
 	private Set<Relationship> relationships;
+
+	/**
+	 * Counter declared as a field inside the class in order to be used and modified inside lambda expression
+	 */
+	private int counter = 0;
 
 	@Override
 	protected void init(final ProcessorInitializationContext context) {
@@ -157,7 +164,7 @@ public class PutArcGIS extends AbstractProcessor {
 
 			getLogger().debug("Number of lines read " + String.valueOf(result.get().size()));
 			
-			List<String> columnNames = result.get().get(0);
+			List<String> columnNames = result.get().remove(0);
 			ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE).asControllerService(ArcGISLayerServiceAPI.class);
 			boolean headerValid = service.isHeaderValid(columnNames);
 			// The first line in the CSV files does not contain a valid list of columns inside the featureTable
@@ -169,14 +176,41 @@ public class PutArcGIS extends AbstractProcessor {
 				return;
 			}
 			
-			// service.execute(arg0, arg1);
+			List<Map<String, String>> records = new ArrayList<Map<String, String>>();
 			
-			result.get().forEach((key, value) -> {
-				for (String s : value)
-					getLogger().debug(s);
+			result.get().forEach((key, values) -> {
+				counter = 0;
+				Map<String, String> record = new HashMap<String, String>();
+				// counter is used to be mapped with the list of column names parsed from the first line
+				// counter is a field in order to be modified in the lambda expression
+				values.forEach(value -> record.put(columnNames.get(counter++), value) );
+				records.add (record);
+				if (getLogger().isDebugEnabled()) {
+					record.forEach((col, value) -> getLogger().debug(col + " : " + value));
+				}
 			});
+			
+			Map<String, Object> settings = new HashMap<String, Object>();
+			final String spatialReference = context.getProperty(SPATIAL_REFERENCE).getValue();
+			if (spatialReference != null && spatialReference.length() >0) {
+				settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
+			}
+			
+			getLogger().debug("Processing " + records.size() + " records");
+			try {
+				service.execute(records, settings);
+				getLogger().debug(records.size() + " records processed");
+			} catch (final ProcessException pe) {
+				getLogger().error(pe.getMessage());
+				if (pe.getCause() != null) {
+					getLogger().error(pe.getMessage());
+					session.transfer(flowFile, FAILED);
+					return;
+				}
+			}
+			
 		} else {
-			throw new RuntimeException ("What The Fuck ! Should not pass here !");
+			throw new RuntimeException ("What's The Fuck... Should not pass here !");
 		}
 
 		session.transfer(flowFile, SUCCESS);

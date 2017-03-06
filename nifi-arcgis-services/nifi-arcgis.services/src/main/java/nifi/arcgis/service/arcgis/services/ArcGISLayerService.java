@@ -70,15 +70,11 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	private static final List<PropertyDescriptor> properties;
 
+
 	/**
-	 * working layer rank searched, and retrieved from the ArcGIS Server by its name
+	 * dataManager in charge of editing data on the ArcGIS server.
 	 */
-	private int layerRank;
-	
-	/**
-	 * List of tableFields available on this current working layer
-	 */
-	private Map<String, ArcGISTableField> tableFields;
+	private ArcGISDataManager gisDataManager = null;
 
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
@@ -139,13 +135,8 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 					+ " for the featureServer " + featureServer.getValue() + " and the layer " + layerName.getValue());
 		}
 		List<ValidationResult> results = new ArrayList<ValidationResult>();
-		ArcGISDataManager gisDataManager = new ArcGISDataManager(getLogger());
 		ValidationResult result = gisDataManager.checkConnection(url.getValue(), folderServer.getValue(),
 				featureServer.getValue(), layerName.getValue());
-		if (result.isValid()) {
-			layerRank = gisDataManager.getLayerRank();
-			tableFields = gisDataManager.getAssociateFields();
-		}
 		// results.clear(); ?
 		results.add(result);
 		return results;
@@ -174,8 +165,12 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	@Override
 	protected void init(ControllerServiceInitializationContext config) throws InitializationException {
-		// TODO Auto-generated method stub
 		super.init(config);
+
+		// lazy loading
+		if (gisDataManager == null) {
+			gisDataManager = new ArcGISDataManager(getLogger());
+		}
 	}
 
 	/**
@@ -194,7 +189,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		if (getLogger().isDebugEnabled()) {
 			getLogger().debug ("Comparing header fields in the CSV and dataField in the ArcGIS FeatureTable");
 			StringBuilder sbArcGIS = new StringBuilder();
-			tableFields.forEach( (key, field) -> sbArcGIS.append(field.name).append(","));
+			gisDataManager.getAssociateFields().forEach( (key, field) -> sbArcGIS.append(field.name).append(","));
 			getLogger().debug ("ArcGIS list : " + sbArcGIS.toString());
 			StringBuilder sbHeader = new StringBuilder();
 			header.forEach(field -> sbHeader.append(field).append(","));
@@ -205,7 +200,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		found.set(false);
 		for (String headerField : header) {
 			found.set(false);
-			tableFields.forEach( (key,field) -> { if (field.name.equals(headerField)) found.set(true); } );
+			gisDataManager.getAssociateFields().forEach( (key,field) -> { if (field.name.equals(headerField)) found.set(true); } );
 			if (!found.get()) {
 				getLogger().info("field " + headerField + " does not exist on this layer");
 				break;
@@ -216,9 +211,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	@Override
 	public void execute( List<Map<String, String>> records, final Map<String,Object> settings) throws ProcessException {
-		getLogger().debug ("executing the update");
-		ArcGISDataManager gisDataManager = new ArcGISDataManager(getLogger());
-		
+		getLogger().debug ("Processing the data updates");		
 		try {
 			gisDataManager.updateData(records, settings);
 		} catch (Exception e) {

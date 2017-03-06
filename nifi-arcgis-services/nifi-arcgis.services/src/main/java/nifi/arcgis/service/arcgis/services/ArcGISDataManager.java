@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.logging.ComponentLog;
+import org.bouncycastle.jcajce.provider.asymmetric.rsa.RSAUtil;
 
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
 import com.esri.arcgisruntime.data.Feature;
@@ -49,6 +50,11 @@ public class ArcGISDataManager {
 	private int layerRank;
 
 	/**
+	 * Complete ArcGIS URL for accessing the featureServer
+	 */
+	private String featureTableCompleteUrl = null;
+
+	/**
 	 * Apache NIFI logger
 	 */
 	private final ComponentLog logger;
@@ -61,9 +67,8 @@ public class ArcGISDataManager {
 	/**
 	 * Locker
 	 */
-	final static Locker locker  = new Locker();
-	
-	
+	final static Locker locker = new Locker();
+
 	/**
 	 * Main constructor
 	 * 
@@ -89,18 +94,29 @@ public class ArcGISDataManager {
 	 */
 	String currentSubject;
 
+	/**
+	 * Connector for managing the featureTable
+	 */
+	private ServiceFeatureTable featureTable = null;
+	
 	/*
 	 * Check ArcGIS server connection with the current parameters.
 	 * 
 	 * @param arcgisURL URL of the ArcGIS server
-	 * @param folderServer Folder name starting from the root directory where the featureServers are located
+	 * 
+	 * @param folderServer Folder name starting from the root directory where
+	 * the featureServers are located
+	 * 
 	 * @param featureServer Name of the FeatureServer
+	 * 
 	 * @param layerName Name of the layer inside the ArcGIS database
 	 * 
 	 * @return The validation report for these parameters
 	 */
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
+
+		checkConnectionFinished = false;
 
 		final ValidationResult.Builder builder = new ValidationResult.Builder();
 
@@ -147,7 +163,7 @@ public class ArcGISDataManager {
 
 			currentRestResource = arcgisURL
 					+ MessageFormat.format(URL_SERVICE_FEATURE_TABLE, featureServer, oLayer.get().id);
-			ServiceFeatureTable featureTable = new ServiceFeatureTable(currentRestResource);
+			featureTable = new ServiceFeatureTable(currentRestResource);
 			logger.info("Loading asynchronous the featureTable from " + currentRestResource + "...");
 			featureTable.loadAsync();
 
@@ -174,9 +190,9 @@ public class ArcGISDataManager {
 								.explanation(featureTable.getTableName() + " is read-only !").valid(false);
 					} else {
 						associateFields.clear();
-						featureTable.getFields().forEach( field -> associateFields.put(
-								field.getName(),
+						featureTable.getFields().forEach(field -> associateFields.put(field.getName(),
 								new ArcGISTableField(field.getName(), field.getFieldType())));
+						featureTableCompleteUrl = currentRestResource;
 						builder.valid(true);
 					}
 				}
@@ -222,40 +238,91 @@ public class ArcGISDataManager {
 	public int getLayerRank() {
 		return layerRank;
 	}
-	
+
+	/**
+	 * @return the complete URL for accessing the current featureTable
+	 */
+	public String getFeatureTableCompleteUrl() {
+		return featureTableCompleteUrl;
+	}
+
 	/**
 	 * @return return the list of Fields loaded on the featureTable
 	 */
 	public Map<String, ArcGISTableField> getAssociateFields() {
 		return associateFields;
 	}
-	
-	/**
-	 * Add a collection of features into the table town into the geo_db
-	 * database
-	 * 
-	 * @param layerRank : the rank of the layer in the folder
-	 * @param records The list of records to add
-	 * @param settings the data settings associated, such as the current SpatialReference 
-	 */
-	public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings) throws Exception {
 
-		
-		ServiceFeatureTable featureTable = new ServiceFeatureTable(currentRestResource);
-		
-		
-		if (!featureTable.getGeometryType().equals(GeometryType.POINT))  {
-			throw new RuntimeException("Other geometries that point are not implemented yet !"); 
+	/**
+	 * Add a collection of features into the table town into the geo_db database
+	 * 
+	 * @param layerRank
+	 *            the rank of the layer in the folder
+	 * @param records
+	 *            The list of records to add
+	 * @param settings
+	 *            the data settings associated, such as the current
+	 *            SpatialReference
+	 */
+	public void processRecords(final List<Map<String, String>> records, final Map<String, Object> settings)
+			throws Exception {
+
+		if (featureTable == null) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("working with the layer " + featureTableCompleteUrl);
+			}
+			featureTable = new ServiceFeatureTable(featureTableCompleteUrl);		
+			featureTable.loadAsync();
+		} else {
+			if (featureTable.getLoadStatus() == LoadStatus.NOT_LOADED) {
+				featureTable.loadAsync();
+			} else{
+				updateData(records, settings);
+				return;
+			}
 		}
+
+		featureTable.addDoneLoadingListener(() -> {
+			LoadStatus ls = featureTable.getLoadStatus();
+
+			if (ls.equals(LoadStatus.LOADED)) {
+				try {
+					updateData(records, settings);
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			} else {
+				featureTable.getLoadError().printStackTrace();
+			}
+		});
+	}
 		
+		/**
+		 * Add a collection of features into the table town into the geo_db database
+		 * 
+		 * @param records
+		 *            The list of records to add
+		 * @param settings
+		 *            the data settings associated, such as the current
+		 *            SpatialReference
+		 */
+		public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings)
+				throws Exception {
+		
+		
+		if (!featureTable.getGeometryType().equals(GeometryType.POINT)) {
+			throw new RuntimeException("What's the fuck... Other geometries than point are not implemented yet !");
+		}
+
 		List<Feature> features = new ArrayList<Feature>();
 		for (Map<String, String> record : records) {
-			
+
 			Geometry geometry = null;
-			if (featureTable.getGeometryType().equals(GeometryType.POINT))  {
-				geometry = createPoint (record, settings); 
+			if (featureTable.getGeometryType().equals(GeometryType.POINT)) {
+				geometry = createPoint(record, settings);
 			}
-			
+
 			final Map<String, Object> attributTable = new HashMap<String, Object>();
 			for (String field : record.keySet()) {
 				String value = record.get(field);
@@ -289,10 +356,15 @@ public class ArcGISDataManager {
 
 	/**
 	 * Instantiate a data candidate.
-	 * @param field the field name
-	 * @param value the value loaded from the file, which has to be add
+	 * 
+	 * @param field
+	 *            the field name
+	 * @param value
+	 *            the value loaded from the file, which has to be add
 	 * @return the value object
-	 * @throws Exception : exception occurs during the data parsing. NumberFormatException might be thrown.
+	 * @throws Exception
+	 *             : exception occurs during the data parsing.
+	 *             NumberFormatException might be thrown.
 	 */
 	private Object getDataColumn(String field, String value) throws Exception {
 		Object o = null;
@@ -301,19 +373,19 @@ public class ArcGISDataManager {
 			case DOUBLE:
 				o = Double.parseDouble(value);
 				break;
-			case INTEGER:	
+			case INTEGER:
 				o = Integer.parseInt(value);
 				break;
-			case TEXT:	
+			case TEXT:
 				o = value;
 				break;
 			default:
-				throw new Exception("Not implemented yet for "+ associateFields.get(field).type);
+				throw new Exception("Not implemented yet for " + associateFields.get(field).type);
 			}
 		}
 		return o;
 	}
-	
+
 	/**
 	 * Sends any edits on the ServiceFeatureTable to the server.
 	 *
@@ -330,7 +402,7 @@ public class ArcGISDataManager {
 				// check if the server edit was successful
 				if (edits != null && edits.size() > 0 && edits.get(0).hasCompletedWithErrors()) {
 					throw edits.get(0).getError();
-				} 
+				}
 			} catch (InterruptedException | ExecutionException e) {
 				e.printStackTrace();
 			} finally {
@@ -340,23 +412,29 @@ public class ArcGISDataManager {
 	}
 
 	/**
-	 * <p>Create an ArcGIS point. <br/> 
-	 * The constructor used will hang on the presence of fields such as "x", "y", "z. <br/>
+	 * <p>
+	 * Create an ArcGIS point. <br/>
+	 * The constructor used will hang on the presence of fields such as "x",
+	 * "y", "z. <br/>
 	 * If not field such as "latitude" and "longitude" will be used. <br/>
-	 * If any information is available to allow the creation of a point, an exception will be thrown. </p>
-	 * <p><i>The parameter-value "m" is not handled in this current release</i></p>
+	 * If any information is available to allow the creation of a point, an
+	 * exception will be thrown.
+	 * </p>
+	 * <p>
+	 * <i>The parameter-value "m" is not handled in this current release</i>
+	 * </p>
 	 *
 	 * @return
 	 */
 	public Geometry createPoint(Map<String, String> records, Map<String, Object> settings) throws Exception {
-		
-		if (!(	(records.containsKey("x") && records.containsKey("y")) ||
-				(records.containsKey("lattitude") && records.containsKey("longitude")))) {
+
+		if (!((records.containsKey("x") && records.containsKey("y"))
+				|| (records.containsKey("lattitude") && records.containsKey("longitude")))) {
 			throw new Exception("Cannot create a point based on the received data");
 		}
 
 		SpatialReference spatialReference = null;
-		if  (settings.containsKey(SPATIAL_REFERENCE)) {
+		if (settings.containsKey(SPATIAL_REFERENCE)) {
 			String refSpatialReference = (String) settings.get(SPATIAL_REFERENCE);
 			if (SPATIAL_REFERENCE_WGS84.equals(refSpatialReference)) {
 				spatialReference = SpatialReferences.getWgs84();
@@ -368,22 +446,23 @@ public class ArcGISDataManager {
 				}
 			}
 		}
-		
+
 		if (records.containsKey("x") && records.containsKey("y")) {
 			double x = Double.parseDouble(records.get("x"));
 			double y = Double.parseDouble(records.get("y"));
 			if (records.containsKey("z")) {
 				double z = Double.parseDouble(records.get("z"));
-				return  (spatialReference == null) ? new Point (x,y,z) : new Point (x,y,z,spatialReference);
+				return (spatialReference == null) ? new Point(x, y, z) : new Point(x, y, z, spatialReference);
 			}
-			return  (spatialReference == null) ? new Point (x,y) : new Point (x,y, spatialReference);
+			return (spatialReference == null) ? new Point(x, y) : new Point(x, y, spatialReference);
 		}
 		if (records.containsKey("longitude") && records.containsKey("lattitude")) {
 			double lattitude = Double.parseDouble(records.get("lattitude"));
 			double longitude = Double.parseDouble(records.get("longitude"));
-			return  (spatialReference == null) ? new Point (lattitude, longitude) : new Point (lattitude, longitude, spatialReference);
-		}		
+			return (spatialReference == null) ? new Point(lattitude, longitude)
+					: new Point(lattitude, longitude, spatialReference);
+		}
 		throw new Exception("Should not pass here!");
 	}
-	
+
 }
