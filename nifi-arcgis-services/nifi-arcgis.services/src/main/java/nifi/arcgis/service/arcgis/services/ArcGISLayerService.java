@@ -220,4 +220,12 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		}
 	}
 
+	/**
+	 * <p>Setter for testing purpose only.</p> 
+	 * <p>DO NOT USE OUTSIDE A UNIT TEST</p>
+	 * @param gisDataManager
+	 */
+	public void setArcGISDataManager (ArcGISDataManager gisDataManager) {
+		this.gisDataManager = gisDataManager;
+	}
 }

@@ -1,9 +1,8 @@
 package nifi.arcgis.service.arcgis.services;
 
-import com.esri.arcgisruntime.data.Field.Type.*;
-
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 
 import java.net.URL;
 import java.text.MessageFormat;
@@ -18,23 +17,28 @@ import java.util.concurrent.ExecutionException;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.logging.ComponentLog;
-import org.bouncycastle.jcajce.provider.asymmetric.rsa.RSAUtil;
 
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
 import com.esri.arcgisruntime.data.Feature;
 import com.esri.arcgisruntime.data.FeatureEditResult;
+import com.esri.arcgisruntime.data.FeatureQueryResult;
 import com.esri.arcgisruntime.data.Field;
+import com.esri.arcgisruntime.data.QueryParameters;
+import com.esri.arcgisruntime.data.QueryParameters.SpatialRelationship;
 import com.esri.arcgisruntime.data.ServiceFeatureTable;
 import com.esri.arcgisruntime.geometry.Geometry;
+import com.esri.arcgisruntime.geometry.GeometryEngine;
 import com.esri.arcgisruntime.geometry.GeometryType;
 import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.geometry.SpatialReferences;
+import com.esri.arcgisruntime.layers.FeatureLayer;
+import com.esri.arcgisruntime.layers.FeatureLayer.SelectionMode;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 
 import nifi.arcgis.service.arcgis.services.json.ArcGISServicesData;
 import nifi.arcgis.service.arcgis.services.json.Layer;
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE;
 
 public class ArcGISDataManager {
 
@@ -67,7 +71,7 @@ public class ArcGISDataManager {
 	/**
 	 * Locker
 	 */
-	final static Locker locker = new Locker();
+	private final Object locker = new Object();
 
 	/**
 	 * Main constructor
@@ -80,9 +84,9 @@ public class ArcGISDataManager {
 	}
 
 	/**
-	 * This variable is used to verify that the checkConnection is finished
+	 * This variable is used to verify that the data operation is terminated
 	 */
-	volatile boolean checkConnectionFinished = false;
+	boolean dataOperationTerminated = false;
 
 	/**
 	 * Current working REST resource
@@ -98,7 +102,7 @@ public class ArcGISDataManager {
 	 * Connector for managing the featureTable
 	 */
 	private ServiceFeatureTable featureTable = null;
-	
+
 	/*
 	 * Check ArcGIS server connection with the current parameters.
 	 * 
@@ -116,7 +120,7 @@ public class ArcGISDataManager {
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
 
-		checkConnectionFinished = false;
+		dataOperationTerminated = false;
 
 		final ValidationResult.Builder builder = new ValidationResult.Builder();
 
@@ -168,6 +172,7 @@ public class ArcGISDataManager {
 			featureTable.loadAsync();
 
 			Runnable listener = () -> {
+
 				LoadStatus ls = featureTable.getLoadStatus();
 				if (ls.equals(LoadStatus.LOADED)) {
 
@@ -204,11 +209,10 @@ public class ArcGISDataManager {
 							: featureTable.getLoadError().getCause().toString();
 					builder.subject("url ArcGIS & layer name").input(arcgisURL).explanation(errorMessage).valid(false);
 				}
-				/*
-				 * This status release the final infinite-loop before returning
-				 * back to the NIFI framework
-				 */
-				checkConnectionFinished = true;
+				dataOperationTerminated = true;
+				synchronized (locker) {
+					locker.notify();
+				}
 			};
 
 			featureTable.addDoneLoadingListener(listener);
@@ -221,15 +225,19 @@ public class ArcGISDataManager {
 
 		}
 
-		while (!checkConnectionFinished) {
-			try {
-				Thread.sleep(100, 0);
-			} catch (InterruptedException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
+		while (!dataOperationTerminated) {
+			synchronized (locker) {
+				try {
+					locker.wait();
+				} catch (InterruptedException e) {
+					return builder.input(currentRestResource).explanation(e.getMessage()).valid(false)
+							.subject(currentSubject).build();
+				}
 			}
 		}
+
 		return builder.build();
+
 	}
 
 	/**
@@ -271,12 +279,12 @@ public class ArcGISDataManager {
 			if (logger.isDebugEnabled()) {
 				logger.debug("working with the layer " + featureTableCompleteUrl);
 			}
-			featureTable = new ServiceFeatureTable(featureTableCompleteUrl);		
+			featureTable = new ServiceFeatureTable(featureTableCompleteUrl);
 			featureTable.loadAsync();
 		} else {
 			if (featureTable.getLoadStatus() == LoadStatus.NOT_LOADED) {
 				featureTable.loadAsync();
-			} else{
+			} else {
 				updateData(records, settings);
 				return;
 			}
@@ -297,20 +305,19 @@ public class ArcGISDataManager {
 			}
 		});
 	}
-		
-		/**
-		 * Add a collection of features into the table town into the geo_db database
-		 * 
-		 * @param records
-		 *            The list of records to add
-		 * @param settings
-		 *            the data settings associated, such as the current
-		 *            SpatialReference
-		 */
-		public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings)
-				throws Exception {
-		
-		
+
+	/**
+	 * Add a collection of features into the table town into the geo_db database
+	 * 
+	 * @param records
+	 *            The list of records to add
+	 * @param settings
+	 *            the data settings associated, such as the current
+	 *            SpatialReference
+	 */
+	public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings)
+			throws Exception {
+
 		if (!featureTable.getGeometryType().equals(GeometryType.POINT)) {
 			throw new RuntimeException("What's the fuck... Other geometries than point are not implemented yet !");
 		}
@@ -348,7 +355,17 @@ public class ArcGISDataManager {
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
+
+				synchronized (locker) {
+					locker.notify();
+				}
+
 			});
+
+			synchronized (locker) {
+				locker.wait();
+			}
+
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
 		}
@@ -405,8 +422,6 @@ public class ArcGISDataManager {
 				}
 			} catch (InterruptedException | ExecutionException e) {
 				e.printStackTrace();
-			} finally {
-				locker.unlock();
 			}
 		});
 	}
@@ -433,19 +448,7 @@ public class ArcGISDataManager {
 			throw new Exception("Cannot create a point based on the received data");
 		}
 
-		SpatialReference spatialReference = null;
-		if (settings.containsKey(SPATIAL_REFERENCE)) {
-			String refSpatialReference = (String) settings.get(SPATIAL_REFERENCE);
-			if (SPATIAL_REFERENCE_WGS84.equals(refSpatialReference)) {
-				spatialReference = SpatialReferences.getWgs84();
-			} else {
-				if (SPATIAL_REFERENCE_WEBMERCATOR.equals(refSpatialReference)) {
-					spatialReference = SpatialReferences.getWebMercator();
-				} else {
-					throw new Exception(refSpatialReference + " is an invalid SpatialReference !");
-				}
-			}
-		}
+		SpatialReference spatialReference = getSpatialReference(settings);
 
 		if (records.containsKey("x") && records.containsKey("y")) {
 			double x = Double.parseDouble(records.get("x"));
@@ -463,6 +466,91 @@ public class ArcGISDataManager {
 					: new Point(lattitude, longitude, spatialReference);
 		}
 		throw new Exception("Should not pass here!");
+	}
+
+	/**
+	 * @param settings
+	 *            the actual data settings setup in the processor
+	 * @return the SpatialReference of the data
+	 */
+	private SpatialReference getSpatialReference(final Map<String, Object> settings) throws Exception {
+
+		SpatialReference spatialReference = null;
+		if (settings.containsKey(SPATIAL_REFERENCE)) {
+			String refSpatialReference = (String) settings.get(SPATIAL_REFERENCE);
+			if (SPATIAL_REFERENCE_WGS84.equals(refSpatialReference)) {
+				spatialReference = SpatialReferences.getWgs84();
+			} else {
+				if (SPATIAL_REFERENCE_WEBMERCATOR.equals(refSpatialReference)) {
+					spatialReference = SpatialReferences.getWebMercator();
+				} else {
+					throw new Exception(refSpatialReference + " is an invalid SpatialReference !");
+				}
+			}
+		}
+		return spatialReference;
+	}
+
+	public List<Map<String, Object>> search(final int x, final int y, final Map<String, Object> settings, final int searchRadius)
+			throws Exception {
+
+		dataOperationTerminated = false;
+
+		if (featureTable.getLoadStatus() != LoadStatus.LOADED) {
+			throw new Exception("What's the fuck... connection KO for an unknown reason !");
+		}
+
+		// The projection system of the data source
+		SpatialReference currentSpatialReference = getSpatialReference(settings);
+
+		// The area of research
+		Point searchPoint = Point.createWithM(x, y, 0, currentSpatialReference);
+		Polygon searchAroundPoint = GeometryEngine.buffer(searchPoint, searchRadius);
+
+		// Create a query with a buffer around the search point .
+		QueryParameters queryParams = new QueryParameters();
+		queryParams.setGeometry(searchAroundPoint);
+		queryParams.setOutSpatialReference(currentSpatialReference);
+		queryParams.setSpatialRelationship(SpatialRelationship.INTERSECTS);
+
+		final FeatureLayer featureLayer = new FeatureLayer(featureTable);
+
+		List<Map<String, Object>> results = new ArrayList<Map<String, Object>>();
+		final ListenableFuture<FeatureQueryResult> future = featureLayer.selectFeaturesAsync(queryParams,
+				SelectionMode.NEW);
+		future.addDoneListener(() -> {
+			try {
+									
+				FeatureQueryResult result;
+				result = future.get();
+
+				result.forEach(feature -> {
+					if (logger.isDebugEnabled()) {
+						logger.debug("distance from the search Point "
+								+ GeometryEngine.distanceBetween(searchPoint, feature.getGeometry()));
+						Map<String, Object> attributes = feature.getAttributes();
+						attributes.keySet().forEach(key -> logger.debug(key + " " + attributes.get(key)));
+					}
+					results.add(feature.getAttributes());
+				});
+				dataOperationTerminated = true;
+				synchronized (locker) {
+					locker.notify();
+				}
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		});
+		while (!dataOperationTerminated) {
+			synchronized (locker) {
+				locker.wait();
+			}
+		}
+		return results;
 	}
 
 }

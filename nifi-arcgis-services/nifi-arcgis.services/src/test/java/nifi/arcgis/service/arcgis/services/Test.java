@@ -5,13 +5,31 @@ import java.io.StringWriter;
 
 public class Test {
 
+	volatile int i = 0;
+	Object o = new Object();
+	
 	@org.junit.Test
 	public void test() throws Exception {
 		
-		Exception e = new Exception ("test");
-		StringWriter sw = new StringWriter();
-		e.printStackTrace(new PrintWriter(sw));
+		
+		System.out.println(i++);
+		t1.start();
+		synchronized(o) {
+			o.wait();
+		}
+		System.out.println(i++);
 
-		System.out.println(sw.toString());
 	}
+	
+	Thread t1 = new Thread(() -> {
+		System.out.println("go " + i++);
+		try {
+			Thread.sleep(5000);
+		} catch (final Exception e) {
+			e.printStackTrace();
+		}
+		synchronized (o) {
+			o.notify();
+		}
+	});
 }
