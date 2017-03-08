@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -91,6 +93,20 @@ public class TestServiceExcecute {
         List<Map<String, Object>> results = dataManager.search(50, 50, settings, 10000);
         
         assertEquals(1, results.size());
+        
+        cleanupDB();
     }
 
+    private void cleanupDB() throws Exception {
+    	
+    	Class.forName("org.postgresql.Driver");
+    	Connection connection = null;
+    	connection = DriverManager.getConnection(
+    	   "jdbc:postgresql://localhost:5432/geo_db","sde", "sde");
+    	connection.createStatement().execute("delete from town");
+    	connection.close();
+
+    	
+    }
+    
 }

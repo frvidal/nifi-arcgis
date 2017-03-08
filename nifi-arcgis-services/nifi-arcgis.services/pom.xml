@@ -77,13 +77,14 @@
 		</dependency>
         <!--  Postgresql JDBC client for testing purpose -->
         
-        <!-- https://mvnrepository.com/artifact/org.postgresql/postgresql 
+        <!-- https://mvnrepository.com/artifact/org.postgresql/postgresql -->
 		<dependency>
 		    <groupId>org.postgresql</groupId>
 		    <artifactId>postgresql</artifactId>
 		    <version>42.0.0.jre7</version>
-		    <scope>test</scope>
+			<scope>test</scope>
 		</dependency>
-        -->
+        
+        
     </dependencies>
 </project>
