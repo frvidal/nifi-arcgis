@@ -70,6 +70,11 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	private static final List<PropertyDescriptor> properties;
 
+	/**
+	 * is <code>true</code> when the service is updating data in ArcGIS.
+	 * this status pauses the connection test
+	 */
+	private boolean inExecution = false;
 
 	/**
 	 * dataManager in charge of editing data on the ArcGIS server.
@@ -121,6 +126,12 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 	 */
 	protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
 
+		// We pause the control during the execution
+		if (inExecution) {
+			// final ValidationResult.Builder builder = new ValidationResult.Builder();
+			return new ArrayList<ValidationResult>();
+		}
+		
 		PropertyValue url = validationContext.getProperty(ARCGIS_URL);
 		PropertyValue folderServer = validationContext.getProperty(FOLDER_SERVER);
 		if (folderServer == null) {
@@ -211,12 +222,18 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	@Override
 	public void execute( List<Map<String, String>> records, final Map<String,Object> settings) throws ProcessException {
-		getLogger().debug ("Processing the data updates");		
+		inExecution = true;
+		if (getLogger().isDebugEnabled()) {
+			getLogger().debug (Thread.currentThread().getId() + " is processing the data updates");	
+		}
+		
 		try {
 			gisDataManager.updateData(records, settings);
 		} catch (Exception e) {
 			getLogger().error(e.getMessage());
 			throw new ProcessException(e.getMessage());
+		} finally {
+			inExecution = false;
 		}
 	}
 

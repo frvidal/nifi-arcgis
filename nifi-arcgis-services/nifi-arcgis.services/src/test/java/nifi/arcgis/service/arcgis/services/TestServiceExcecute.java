@@ -61,6 +61,8 @@ public class TestServiceExcecute {
     	// test offline
     	if (testOffline) return;
     	
+        cleanupDB();
+
         ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, "http://localhost:6080");
         assertTrue (vr.isValid());
  
@@ -81,6 +83,11 @@ public class TestServiceExcecute {
         record.put("longitude", "50.00");
         final List<Map<String, String>> records = new ArrayList<Map<String, String>>();
         records.add(record);
+        final Map<String, String> record2 = new HashMap<String, String>();
+        record2.put("name", "city-2");
+        record2.put("lattitude", "-3.333333");
+        record2.put("longitude", "48.766667");
+        records.add(record2);
         
         Map<String, Object> settings = new HashMap<String, Object>();
         settings.put(ArcGISLayerServiceAPI.SPATIAL_REFERENCE, ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84);
@@ -92,7 +99,7 @@ public class TestServiceExcecute {
         
         List<Map<String, Object>> results = dataManager.search(50, 50, settings, 10000);
         
-        assertEquals(1, results.size());
+        assertEquals(2, results.size());
         
         cleanupDB();
     }

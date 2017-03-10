@@ -74,6 +74,11 @@ public class ArcGISDataManager {
 	private final Object locker = new Object();
 
 	/**
+	 * Locker
+	 */
+	private final Object lockerEditions = new Object();
+
+	/**
 	 * Main constructor
 	 * 
 	 * @param nifiLogger
@@ -86,7 +91,7 @@ public class ArcGISDataManager {
 	/**
 	 * This variable is used to verify that the data operation is terminated
 	 */
-	boolean dataOperationTerminated = false;
+	private boolean dataOperationTerminated = false;
 
 	/**
 	 * Current working REST resource
@@ -120,6 +125,8 @@ public class ArcGISDataManager {
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
 
+	
+		
 		dataOperationTerminated = false;
 
 		final ValidationResult.Builder builder = new ValidationResult.Builder();
@@ -345,27 +352,34 @@ public class ArcGISDataManager {
 		logger.debug("Adding " + features.size() + " features...");
 		if (featureTable.canAdd()) {
 
+			dataOperationTerminated = false;
+			
 			ListenableFuture<Void> res = featureTable.addFeaturesAsync(features);
 			res.addDoneListener(() -> {
 				try {
 					res.get();
 					if (res.isDone()) {
 						featureTable.applyEditsAsync().addDoneListener(() -> applyEdits(featureTable));
+						locker.notify();
 					}
 				} catch (Exception e) {
-					e.printStackTrace();
+					ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getMessage(e)); 
+
+					synchronized (locker) {
+						dataOperationTerminated = true;
+						locker.notify();
+					}
 				}
 
-				synchronized (locker) {
-					locker.notify();
-				}
 
 			});
 
-			synchronized (locker) {
-				locker.wait();
+			while (!dataOperationTerminated) {
+				synchronized (locker) {
+					locker.wait();
+				}
 			}
-
+			
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
 		}
@@ -416,14 +430,34 @@ public class ArcGISDataManager {
 		editResult.addDoneListener(() -> {
 			try {
 				List<FeatureEditResult> edits = editResult.get();
+				ArcGISDataManager.this.logger.debug("Edition applied (edits.size="+edits.size()+")"); 
 				// check if the server edit was successful
 				if (edits != null && edits.size() > 0 && edits.get(0).hasCompletedWithErrors()) {
 					throw edits.get(0).getError();
 				}
+				
 			} catch (InterruptedException | ExecutionException e) {
-				e.printStackTrace();
+				ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
+			}
+			synchronized (lockerEditions) {
+				dataOperationTerminated = true;
+				lockerEditions.notify ();
+				ArcGISDataManager.this.logger.debug("Releasing lockerEditions");
 			}
 		});
+		
+		
+		while (!dataOperationTerminated) {
+			synchronized (lockerEditions) {
+				ArcGISDataManager.this.logger.debug("Starting to wait");
+				try {
+					lockerEditions.wait();
+				} catch (InterruptedException e) {
+					this.logger.error(ExceptionUtils.getStackTrace(e));
+				}			
+			}
+			ArcGISDataManager.this.logger.debug("Released");
+		}
 	}
 
 	/**
@@ -533,8 +567,8 @@ public class ArcGISDataManager {
 					}
 					results.add(feature.getAttributes());
 				});
-				dataOperationTerminated = true;
 				synchronized (locker) {
+					dataOperationTerminated = true;
 					locker.notify();
 				}
 			} catch (InterruptedException e) {

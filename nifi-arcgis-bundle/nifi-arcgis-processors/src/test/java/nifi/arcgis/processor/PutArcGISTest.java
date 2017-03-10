@@ -42,6 +42,7 @@ public class PutArcGISTest {
         testRunner = TestRunners.newTestRunner(PutArcGIS.class);
         testRunner.setProperty(PutArcGIS.TYPE_OF_FILE, "CSV");
         testRunner.setProperty(PutArcGIS.ARCGIS_SERVICE, "arcgis-service");
+        testRunner.setProperty(PutArcGIS.QUOTITY, "100");
 		
         MockControllerService service = new MockControllerService();
         testRunner.addControllerService("arcgis-service", service);

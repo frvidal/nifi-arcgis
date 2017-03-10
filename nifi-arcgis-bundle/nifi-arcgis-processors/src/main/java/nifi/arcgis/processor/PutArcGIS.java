@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -50,6 +51,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
+import com.esri.arcgisruntime.internal.jni.de;
 import com.esri.arcgisruntime.internal.jni.ex;
 
 import nifi.arcgis.processor.utility.CsvManager;
@@ -67,6 +69,8 @@ import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 public class PutArcGIS extends AbstractProcessor {
 
+	private final static int QUOTITY_DEFAULT = 5000;
+	
 	private final static String JSON = "JSON";
 	private final static String CSV = "CSV";
 	private final static String FILE_ENCODING = "UTF-8";
@@ -82,6 +86,8 @@ public class PutArcGIS extends AbstractProcessor {
 	public static final PropertyDescriptor SPATIAL_REFERENCE = new PropertyDescriptor.Builder().name("Spatial reference")
 			.description("Type of spatial reference if necessary").allowableValues(SPATIAL_REFERENCE_WGS84,SPATIAL_REFERENCE_WEBMERCATOR).required(false).build();
 	
+	public static final PropertyDescriptor QUOTITY = new PropertyDescriptor.Builder().name("Quotity")
+			.description("Quotity of records to proceed (1 by 1, n by n)").defaultValue(String.valueOf(QUOTITY_DEFAULT)).addValidator(StandardValidators.INTEGER_VALIDATOR).required(false).build();
 	
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
@@ -104,6 +110,7 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(ARCGIS_SERVICE);
 		descriptors.add(TYPE_OF_FILE);
 		descriptors.add(SPATIAL_REFERENCE);
+		descriptors.add(QUOTITY);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -196,18 +203,31 @@ public class PutArcGIS extends AbstractProcessor {
 				settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
 			}
 			
-			getLogger().debug("Processing " + records.size() + " records");
-			try {
-				service.execute(records, settings);
-				getLogger().debug(records.size() + " records processed");
-			} catch (final ProcessException pe) {
-				getLogger().error(pe.getMessage());
-				if (pe.getCause() != null) {
-					getLogger().error(pe.getMessage());
+			int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
+			final int nb_total_records = records.size();
+			getLogger().debug("Processing " + nb_total_records + " records by blocks of " + String.valueOf(quotity) + " elements");
+			
+			while (!records.isEmpty()) {
+				List<Map<String, String>> processingRecords = new ArrayList<Map<String, String>>();
+				for (int i = 0; i < quotity; i++) {
+					processingRecords.add(records.remove(0));
+					if (records.isEmpty())
+						break;
+				}
+				try {
+					getLogger().debug("Processing " + processingRecords.size() + " records...");
+					service.execute(processingRecords, settings);
+					getLogger().debug("..." + processingRecords.size() + " records processed");
+				} catch (final ProcessException pe) {
+					getLogger().error(ExceptionUtils.getStackTrace(pe));
+					if (pe.getCause() != null) {
+						getLogger().error(ExceptionUtils.getStackTrace(pe.getCause()));
+					}
 					session.transfer(flowFile, FAILED);
 					return;
 				}
 			}
+			getLogger().debug("At all " + nb_total_records + " records processed");
 			
 		} else {
 			throw new RuntimeException ("What's The Fuck... Should not pass here !");
