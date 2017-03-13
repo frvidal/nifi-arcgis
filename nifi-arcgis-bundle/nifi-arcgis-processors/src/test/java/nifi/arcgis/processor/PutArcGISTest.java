@@ -18,6 +18,8 @@ package nifi.arcgis.processor;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.util.List;
 
 import org.apache.nifi.util.MockFlowFile;
@@ -87,6 +89,26 @@ public class PutArcGISTest {
 
     	List<MockFlowFile> failedFiles = testRunner.getFlowFilesForRelationship(PutArcGIS.SUCCESS);
     	assertEquals(1, failedFiles.size());
+    }
+
+    @Test
+    public void testProcessor_conversion() throws Exception {
+    	
+    	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
+
+    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris_header_KO.csv");
+    
+    	// Add the content to the runner
+    	testRunner.enqueue(content);
+    	
+    	// Launch the runner
+    	testRunner.run(1);
+        testRunner.assertQueueEmpty();
+    	testRunner.assertValid();
+    	
+    	List<MockFlowFile> failedFiles = testRunner.getFlowFilesForRelationship(PutArcGIS.FAILED);
+    	assertEquals(1, failedFiles.size());
+
     }
 
 }

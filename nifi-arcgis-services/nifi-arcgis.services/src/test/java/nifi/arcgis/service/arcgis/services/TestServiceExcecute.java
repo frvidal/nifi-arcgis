@@ -112,7 +112,6 @@ public class TestServiceExcecute {
     	   "jdbc:postgresql://localhost:5432/geo_db","sde", "sde");
     	connection.createStatement().execute("delete from town");
     	connection.close();
-
     	
     }
     

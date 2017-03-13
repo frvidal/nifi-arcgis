@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnDisabled;
@@ -98,6 +99,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 			getLogger().debug("onPropertyModified for " + descriptor.getName() + " : oldValue=" + oldValue
 					+ ", newValue=" + newValue);
 		}
+		
 		/*
 		 * 
 		 * - A directory specified by calling
@@ -116,6 +118,12 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	List<ValidationResult> results = new ArrayList<ValidationResult>();
 
+	static final List<ValidationResult> EMPTY_OK = new ArrayList<ValidationResult>();
+	static {
+		final ValidationResult empty_ok = new ValidationResult.Builder().valid(true).build();
+		EMPTY_OK.add(empty_ok);
+	}
+	
 	@Override
 	/**
 	 * Check the validity of the ArcGIS server GIS URL and
@@ -128,8 +136,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 		// We pause the control during the execution
 		if (inExecution) {
-			// final ValidationResult.Builder builder = new ValidationResult.Builder();
-			return new ArrayList<ValidationResult>();
+			return EMPTY_OK;
 		}
 		
 		PropertyValue url = validationContext.getProperty(ARCGIS_URL);
@@ -182,7 +189,10 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		if (gisDataManager == null) {
 			gisDataManager = new ArcGISDataManager(getLogger());
 		}
+		
+		
 	}
+
 
 	/**
 	 * For testing purpose. In charge of detecting the invocation of
@@ -230,7 +240,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		try {
 			gisDataManager.updateData(records, settings);
 		} catch (Exception e) {
-			getLogger().error(e.getMessage());
+			getLogger().error(ExceptionUtils.getStackTrace(e));
 			throw new ProcessException(e.getMessage());
 		} finally {
 			inExecution = false;

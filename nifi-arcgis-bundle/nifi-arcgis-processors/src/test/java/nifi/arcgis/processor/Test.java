@@ -1,15 +1,10 @@
 package nifi.arcgis.processor;
 
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CharsetEncoder;
-
-import org.apache.nifi.stream.io.SynchronizedByteCountingOutputStream;
-
-import com.maxmind.geoip.LookupService;
+import java.lang.reflect.Executable;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 
 /**
  * Class of test for testing java purpose
@@ -21,10 +16,24 @@ public class Test {
 
 	@org.junit.Test
 	public void test() throws Exception {
-		String s = "RhÃ´ne-Alpes";        
+		String s = "PlouÃ©nan";        
 	    byte[] b = s.getBytes("ISO-8859-1");
 	    String t = new String(b, "UTF-8");
 	    System.out.println(t);
+	 
+    	Class.forName("org.postgresql.Driver");
+    	Connection connection = null;
+    	connection = DriverManager.getConnection(
+    	   "jdbc:postgresql://localhost:5432/geo_db","sde", "sde");
+    	
+    	PreparedStatement stmt = connection.prepareStatement("select NAME from TOWN where name like 'Plou%'", 
+    			ResultSet.FETCH_FORWARD, ResultSet.CONCUR_READ_ONLY);
+    	ResultSet rs = stmt.executeQuery();
+    	while (rs.next()) {
+    		String chaine = rs.getString(1);
+    		System.out.println(chaine);
+    	}
+    	connection.close();
 	    
 		/*
 		

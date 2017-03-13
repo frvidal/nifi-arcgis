@@ -360,15 +360,15 @@ public class ArcGISDataManager {
 					res.get();
 					if (res.isDone()) {
 						featureTable.applyEditsAsync().addDoneListener(() -> applyEdits(featureTable));
-						locker.notify();
 					}
 				} catch (Exception e) {
-					ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getMessage(e)); 
+					ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e)); 
 
+				} finally {
 					synchronized (locker) {
 						dataOperationTerminated = true;
 						locker.notify();
-					}
+					}					
 				}
 
 

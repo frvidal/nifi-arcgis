@@ -22,8 +22,10 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,6 +44,8 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -73,7 +77,7 @@ public class PutArcGIS extends AbstractProcessor {
 	
 	private final static String JSON = "JSON";
 	private final static String CSV = "CSV";
-	private final static String FILE_ENCODING = "UTF-8";
+	private final static String DEFAULT_CHARACTER_SET = "UTF-8";
 	
 	public static final PropertyDescriptor ARCGIS_SERVICE = new PropertyDescriptor.Builder().name("ArcGIS server")
 			.description("This Controller Service to use in order to access the ArcGIS server").required(true)
@@ -88,6 +92,12 @@ public class PutArcGIS extends AbstractProcessor {
 	
 	public static final PropertyDescriptor QUOTITY = new PropertyDescriptor.Builder().name("Quotity")
 			.description("Quotity of records to proceed (1 by 1, n by n)").defaultValue(String.valueOf(QUOTITY_DEFAULT)).addValidator(StandardValidators.INTEGER_VALIDATOR).required(false).build();
+
+	public static final PropertyDescriptor CHARACTER_SET_IN = new PropertyDescriptor.Builder().name("Character Set IN")
+			.description("Character Set IN").addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(false).build();
+
+	public static final PropertyDescriptor CHARACTER_SET_OUT = new PropertyDescriptor.Builder().name("Character Set OUT")
+			.description("Character Set OUT").addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(false).build();
 	
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
@@ -100,6 +110,16 @@ public class PutArcGIS extends AbstractProcessor {
 	private Set<Relationship> relationships;
 
 	/**
+	 * The character set of the INPUT data, or an empty string if this property is not setup
+	 */
+	public String charSetIn;
+	
+	/**
+	 * The character set of the OUTPUT data, or an empty string if this property is not setup
+	 */
+	public String charSetOut;
+	
+	/**
 	 * Counter declared as a field inside the class in order to be used and modified inside lambda expression
 	 */
 	private int counter = 0;
@@ -111,6 +131,8 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(TYPE_OF_FILE);
 		descriptors.add(SPATIAL_REFERENCE);
 		descriptors.add(QUOTITY);
+		descriptors.add(CHARACTER_SET_IN);
+		descriptors.add(CHARACTER_SET_OUT);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -128,12 +150,46 @@ public class PutArcGIS extends AbstractProcessor {
 	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
 		return descriptors;
 	}
+	
+	@Override
+	protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
+		charSetIn = validationContext.getProperty(CHARACTER_SET_IN).getValue();
+		charSetOut = validationContext.getProperty(CHARACTER_SET_OUT).getValue();
+		if (charSetIn == null) charSetIn = "";
+		if (charSetOut == null) charSetOut = "";
+		
+		if ((charSetIn.length() == 0) && (charSetOut.length() == 0)) {
+			return super.customValidate(validationContext);			
+		}
+		
+		ValidationResult.Builder builder = new ValidationResult.Builder();
+		List<ValidationResult> results = new ArrayList<ValidationResult>();
+		
+		if ((charSetIn.length() > 0) && (charSetOut.length() == 0)) {
+			ValidationResult result = builder.valid(false).explanation("You need to set the OUTPUT character set, to complete the conversion setup").build();
+			results.add(result);
+			return results;
+		}
+		if ((charSetIn.length() == 0) && (charSetOut.length() > 0)) {
+			ValidationResult result = builder.valid(false).explanation("You need to set the INPUT character set, to complete the conversion setup").build();
+			results.add(result);
+			return results;
+		}
+		if (charSetIn.equals(charSetOut)) {
+			ValidationResult result = builder.valid(false).explanation("No conversion will be done IN = OUT").build();
+			results.add(result);
+			return results;
+		}
+					
+		return super.customValidate(validationContext);
+	}
 
 	@OnScheduled
 	public void onScheduled(final ProcessContext context) {
 
 	}
 
+	
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
@@ -150,15 +206,15 @@ public class PutArcGIS extends AbstractProcessor {
 		if (flowFile == null) {
 			return;
 		}
-		getLogger().debug("onTrigger");
+
 		Map<String, String> data = flowFile.getAttributes();
 		data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
 		if (CSV.equals(typeOfFile)) {
 
 			session.read(flowFile, (InputStream inputStream) -> {
 				Map<Integer, List<String>> lines = new HashMap<Integer, List<String>>();
-				BufferedReader reader = new BufferedReader(
-						new InputStreamReader(inputStream, Charset.forName(FILE_ENCODING)));
+				
+				BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
 				StringBuilder sb;
 				int lineNumber = 0;
 				while ((sb = FileManager.readLine(reader)) != null) {
@@ -190,7 +246,8 @@ public class PutArcGIS extends AbstractProcessor {
 				Map<String, String> record = new HashMap<String, String>();
 				// counter is used to be mapped with the list of column names parsed from the first line
 				// counter is a field in order to be modified in the lambda expression
-				values.forEach(value -> record.put(columnNames.get(counter++), value) );
+				// The value of columnNames.get(counter++) contains the name of the field retrieved from the header line
+				values.forEach(value -> record.put(columnNames.get(counter++), convert(value)) );
 				records.add (record);
 				if (getLogger().isDebugEnabled()) {
 					record.forEach((col, value) -> getLogger().debug(col + " : " + value));
@@ -235,4 +292,29 @@ public class PutArcGIS extends AbstractProcessor {
 
 		session.transfer(flowFile, SUCCESS);
 	}
+
+	/**
+	 * <p>Convert the INPUT string in a different character set, if necessary.
+	 * <br/>If the selected encoding is not supported, the INPUT String will be returned unchanged, and a WARN line will be added in a log file. 
+	 * <br/><i>We expect that the StandardValidators.CHARACTER_SET_VALIDATOR handle all thoses limitations</i>
+	 * </p>
+	 * @param in a string encoded in the character set <b>IN</b>
+	 * @return the string encoded in the character set <b>OUT</b>
+	 */
+	public String convert (final String in) {
+		try {
+			if (!charSetIn.equals(charSetOut)) {
+			    byte[] bIn = in.getBytes(charSetIn);
+			    String out = new String(bIn, charSetOut);
+			    
+			    return out;
+			}
+		} catch (final UnsupportedEncodingException e) {
+			getLogger().error(e.getMessage());
+		}
+
+		return in;
+		
+	}
+
 }
