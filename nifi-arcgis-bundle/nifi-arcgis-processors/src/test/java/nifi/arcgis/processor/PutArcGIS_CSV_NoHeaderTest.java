@@ -18,8 +18,6 @@ package nifi.arcgis.processor;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.List;
 
 import org.apache.nifi.util.MockFlowFile;
@@ -28,7 +26,6 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
-import junit.framework.AssertionFailedError;
 import static org.junit.Assert.assertEquals;
 
 public class PutArcGIS_CSV_NoHeaderTest {
