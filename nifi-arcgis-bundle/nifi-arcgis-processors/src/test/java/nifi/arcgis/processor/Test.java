@@ -26,7 +26,7 @@ public class Test {
     	connection = DriverManager.getConnection(
     	   "jdbc:postgresql://localhost:5432/geo_db","sde", "sde");
     	
-    	PreparedStatement stmt = connection.prepareStatement("select NAME from TOWN where name like 'Plou%'", 
+    	PreparedStatement stmt = connection.prepareStatement("select NAME from CITY where name like 'Plou%'", 
     			ResultSet.FETCH_FORWARD, ResultSet.CONCUR_READ_ONLY);
     	ResultSet rs = stmt.executeQuery();
     	while (rs.next()) {

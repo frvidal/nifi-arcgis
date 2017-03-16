@@ -27,7 +27,7 @@ public class MockControllerService extends AbstractControllerService implements 
 	@Override
 	public void execute(List<Map<String, String>> arg0, Map<String, Object> arg1) throws ProcessException {
 		// TODO Auto-generated method stub
-		
+		getLogger().debug("execution in MockControllerService");
 	}
 
 

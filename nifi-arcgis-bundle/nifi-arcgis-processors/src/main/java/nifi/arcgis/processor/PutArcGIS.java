@@ -20,6 +20,10 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
@@ -94,11 +98,12 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Quotity of records to proceed (1 by 1, n by n)").defaultValue(String.valueOf(QUOTITY_DEFAULT)).addValidator(StandardValidators.INTEGER_VALIDATOR).required(false).build();
 
 	public static final PropertyDescriptor CHARACTER_SET_IN = new PropertyDescriptor.Builder().name("Character Set IN")
-			.description("Character Set IN").addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(false).build();
+			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET).addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
 
-	public static final PropertyDescriptor CHARACTER_SET_OUT = new PropertyDescriptor.Builder().name("Character Set OUT")
-			.description("Character Set OUT").addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(false).build();
-	
+	public static final PropertyDescriptor HEADER = new PropertyDescriptor.Builder().name("Header")
+			.description("FOR CSV FILE ONLY ! Header file is containing the list columns of the target featureTable.\nIf any header file are mentionned system will guess the CSV file contains this header").addValidator(StandardValidators.FILE_EXISTS_VALIDATOR).required(false).build();
+
+
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
 
@@ -132,7 +137,7 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(SPATIAL_REFERENCE);
 		descriptors.add(QUOTITY);
 		descriptors.add(CHARACTER_SET_IN);
-		descriptors.add(CHARACTER_SET_OUT);
+		descriptors.add(HEADER);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -151,39 +156,6 @@ public class PutArcGIS extends AbstractProcessor {
 		return descriptors;
 	}
 	
-	@Override
-	protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
-		charSetIn = validationContext.getProperty(CHARACTER_SET_IN).getValue();
-		charSetOut = validationContext.getProperty(CHARACTER_SET_OUT).getValue();
-		if (charSetIn == null) charSetIn = "";
-		if (charSetOut == null) charSetOut = "";
-		
-		if ((charSetIn.length() == 0) && (charSetOut.length() == 0)) {
-			return super.customValidate(validationContext);			
-		}
-		
-		ValidationResult.Builder builder = new ValidationResult.Builder();
-		List<ValidationResult> results = new ArrayList<ValidationResult>();
-		
-		if ((charSetIn.length() > 0) && (charSetOut.length() == 0)) {
-			ValidationResult result = builder.valid(false).explanation("You need to set the OUTPUT character set, to complete the conversion setup").build();
-			results.add(result);
-			return results;
-		}
-		if ((charSetIn.length() == 0) && (charSetOut.length() > 0)) {
-			ValidationResult result = builder.valid(false).explanation("You need to set the INPUT character set, to complete the conversion setup").build();
-			results.add(result);
-			return results;
-		}
-		if (charSetIn.equals(charSetOut)) {
-			ValidationResult result = builder.valid(false).explanation("No conversion will be done IN = OUT").build();
-			results.add(result);
-			return results;
-		}
-					
-		return super.customValidate(validationContext);
-	}
-
 	@OnScheduled
 	public void onScheduled(final ProcessContext context) {
 
@@ -193,6 +165,9 @@ public class PutArcGIS extends AbstractProcessor {
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
+		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
+		final String headerFilename = context.getProperty(HEADER).getValue();
+		
 		final String typeOfFile = context.getProperty(TYPE_OF_FILE).getValue();
 		if (JSON.equals(typeOfFile)) {
 			getLogger().error(JSON + " file workflow is not implemented yet !");
@@ -201,31 +176,37 @@ public class PutArcGIS extends AbstractProcessor {
 		}
 
 		final AtomicReference<Map<Integer, List<String>>> result = new AtomicReference<Map<Integer, List<String>>>();
-
+		result.set(new HashMap<Integer, List<String>>());
 		final FlowFile flowFile = session.get();
 		if (flowFile == null) {
 			return;
 		}
 
+		if ((headerFilename != null) && (headerFilename.length() > 0)) {
+			try {
+				InputStream is = new FileInputStream(new File(headerFilename));
+				parseCSVStream(is, charSetName, result);
+			} catch (Exception e) {
+				getLogger().error(ExceptionUtils.getStackTrace(e));
+				session.transfer(session.get(), FAILED);
+			}
+		}
+
 		Map<String, String> data = flowFile.getAttributes();
 		data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
 		if (CSV.equals(typeOfFile)) {
-
+			
 			session.read(flowFile, (InputStream inputStream) -> {
-				Map<Integer, List<String>> lines = new HashMap<Integer, List<String>>();
-				
-				BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-				StringBuilder sb;
-				int lineNumber = 0;
-				while ((sb = FileManager.readLine(reader)) != null) {
-					getLogger().debug("parsing the CSV line " + sb.toString());
-					List<String> line = CsvManager.parseLine(sb.toString(), ';');
-					lines.put(lineNumber++, line);
+				try {
+					parseCSVStream (inputStream, charSetName, result);
+				} catch (final Exception e) {
+					getLogger().error(ExceptionUtils.getStackTrace(e));
+					session.transfer(session.get(), FAILED);
 				}
-				result.set(lines);
 			});
-
-			getLogger().debug("Number of lines read " + String.valueOf(result.get().size()));
+			if (getLogger().isDebugEnabled()) {
+				getLogger().debug("Total number of lines parsed " + String.valueOf(result.get().size()));
+			}
 			
 			List<String> columnNames = result.get().remove(0);
 			ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE).asControllerService(ArcGISLayerServiceAPI.class);
@@ -247,7 +228,7 @@ public class PutArcGIS extends AbstractProcessor {
 				// counter is used to be mapped with the list of column names parsed from the first line
 				// counter is a field in order to be modified in the lambda expression
 				// The value of columnNames.get(counter++) contains the name of the field retrieved from the header line
-				values.forEach(value -> record.put(columnNames.get(counter++), convert(value)) );
+				values.forEach(value -> record.put(columnNames.get(counter++), value) );
 				records.add (record);
 				if (getLogger().isDebugEnabled()) {
 					record.forEach((col, value) -> getLogger().debug(col + " : " + value));
@@ -294,27 +275,27 @@ public class PutArcGIS extends AbstractProcessor {
 	}
 
 	/**
-	 * <p>Convert the INPUT string in a different character set, if necessary.
-	 * <br/>If the selected encoding is not supported, the INPUT String will be returned unchanged, and a WARN line will be added in a log file. 
-	 * <br/><i>We expect that the StandardValidators.CHARACTER_SET_VALIDATOR handle all thoses limitations</i>
-	 * </p>
-	 * @param in a string encoded in the character set <b>IN</b>
-	 * @return the string encoded in the character set <b>OUT</b>
+	 * Parse a CSV Stream and fill the collection result
+	 * @param inputStream the inputStream accessing either the flowFile, or the header file
+	 * @param charSetName the current character set
+	 * @param result atomicReference pointed out the parsed content of the CSV file
+	 * @return the content of the file parsed
+	 * @throws UnsupportedEncodingException 
+	 * @throws IOException 
 	 */
-	public String convert (final String in) {
-		try {
-			if (!charSetIn.equals(charSetOut)) {
-			    byte[] bIn = in.getBytes(charSetIn);
-			    String out = new String(bIn, charSetOut);
-			    
-			    return out;
-			}
-		} catch (final UnsupportedEncodingException e) {
-			getLogger().error(e.getMessage());
-		}
-
-		return in;
+	public void parseCSVStream (final InputStream inputStream, final String charSetName, final AtomicReference<Map<Integer, List<String>>> result) throws UnsupportedEncodingException, IOException  {
 		
-	}
+		BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charSetName));
+		StringBuilder sb;
+		
+		final Map<Integer, List<String>> lines = result.get();
+		int lineNumber = lines.size();
 
+		while ((sb = FileManager.readLine(reader)) != null) {
+			getLogger().debug("parsing the CSV line " + sb.toString());
+			List<String> line = CsvManager.parseLine(sb.toString(), ';');
+			lines.put(lineNumber++, line);
+		}
+	}
+	
 }
