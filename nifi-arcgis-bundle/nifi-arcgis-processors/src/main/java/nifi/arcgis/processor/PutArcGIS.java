@@ -26,6 +26,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringBufferInputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -62,6 +64,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import com.esri.arcgisruntime.internal.jni.de;
 import com.esri.arcgisruntime.internal.jni.ex;
 
+import groovy.model.NestedValueModel;
 import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
 import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
@@ -78,11 +81,11 @@ import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
 public class PutArcGIS extends AbstractProcessor {
 
 	private final static int QUOTITY_DEFAULT = 5000;
-	
+
 	private final static String JSON = "JSON";
 	private final static String CSV = "CSV";
 	private final static String DEFAULT_CHARACTER_SET = "UTF-8";
-	
+
 	public static final PropertyDescriptor ARCGIS_SERVICE = new PropertyDescriptor.Builder().name("ArcGIS server")
 			.description("This Controller Service to use in order to access the ArcGIS server").required(true)
 			.identifiesControllerService(nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.class).build();
@@ -91,18 +94,24 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Type of file to import into ArcGIS\nCSV files require a header with the target column name")
 			.required(true).allowableValues(CSV, JSON).addValidator(StandardValidators.NON_EMPTY_VALIDATOR).build();
 
-	public static final PropertyDescriptor SPATIAL_REFERENCE = new PropertyDescriptor.Builder().name("Spatial reference")
-			.description("Type of spatial reference if necessary").allowableValues(SPATIAL_REFERENCE_WGS84,SPATIAL_REFERENCE_WEBMERCATOR).required(false).build();
-	
+	public static final PropertyDescriptor SPATIAL_REFERENCE = new PropertyDescriptor.Builder()
+			.name("Spatial reference").description("Type of spatial reference if necessary")
+			.allowableValues(SPATIAL_REFERENCE_WGS84, SPATIAL_REFERENCE_WEBMERCATOR).required(false).build();
+
 	public static final PropertyDescriptor QUOTITY = new PropertyDescriptor.Builder().name("Quotity")
-			.description("Quotity of records to proceed (1 by 1, n by n)").defaultValue(String.valueOf(QUOTITY_DEFAULT)).addValidator(StandardValidators.INTEGER_VALIDATOR).required(false).build();
+			.description("Quotity of records to proceed (1 by 1, n by n)").defaultValue(String.valueOf(QUOTITY_DEFAULT))
+			.addValidator(StandardValidators.INTEGER_VALIDATOR).required(false).build();
 
 	public static final PropertyDescriptor CHARACTER_SET_IN = new PropertyDescriptor.Builder().name("Character Set IN")
-			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET).addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
+			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET)
+			.addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
 
-	public static final PropertyDescriptor HEADER = new PropertyDescriptor.Builder().name("Header")
-			.description("FOR CSV FILE ONLY ! Header file is containing the list columns of the target featureTable.\nIf any header file are mentionned system will guess the CSV file contains this header").addValidator(StandardValidators.FILE_EXISTS_VALIDATOR).required(false).build();
-
+	public static final PropertyDescriptor FIELD_LIST = new PropertyDescriptor.Builder().name("List of fields of the target table")
+			.description(
+					"Comma separated list columns of the target featureTable.\\n" +
+					"FOR CSV file : If any field is mentionned, the processor system will guess the CSV file contains this header.\\n"+
+					"FOR JSON file : all fields in the JSON are candidate to udate")
+			.addValidator(new StandardValidators.StringLengthValidator(0, 512)).required(false).build();
 
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
@@ -115,17 +124,20 @@ public class PutArcGIS extends AbstractProcessor {
 	private Set<Relationship> relationships;
 
 	/**
-	 * The character set of the INPUT data, or an empty string if this property is not setup
+	 * The character set of the INPUT data, or an empty string if this property
+	 * is not setup
 	 */
 	public String charSetIn;
-	
+
 	/**
-	 * The character set of the OUTPUT data, or an empty string if this property is not setup
+	 * The character set of the OUTPUT data, or an empty string if this property
+	 * is not setup
 	 */
 	public String charSetOut;
-	
+
 	/**
-	 * Counter declared as a field inside the class in order to be used and modified inside lambda expression
+	 * Counter declared as a field inside the class in order to be used and
+	 * modified inside lambda expression
 	 */
 	private int counter = 0;
 
@@ -137,7 +149,7 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(SPATIAL_REFERENCE);
 		descriptors.add(QUOTITY);
 		descriptors.add(CHARACTER_SET_IN);
-		descriptors.add(HEADER);
+		descriptors.add(FIELD_LIST);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -155,25 +167,37 @@ public class PutArcGIS extends AbstractProcessor {
 	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
 		return descriptors;
 	}
-	
+
 	@OnScheduled
 	public void onScheduled(final ProcessContext context) {
 
 	}
 
-	
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
-		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
-		final String headerFilename = context.getProperty(HEADER).getValue();
-		
 		final String typeOfFile = context.getProperty(TYPE_OF_FILE).getValue();
 		if (JSON.equals(typeOfFile)) {
 			getLogger().error(JSON + " file workflow is not implemented yet !");
 			session.transfer(session.get(), FAILED);
 			return;
 		}
+
+		if (CSV.equals(typeOfFile)) {
+			handleCSVFlow(context, session);
+		}
+	}
+
+	/**
+	 * 
+	 * @param context
+	 * @param session
+	 * @throws ProcessException
+	 */
+	private void handleCSVFlow(final ProcessContext context, final ProcessSession session) throws ProcessException {
+
+		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
+		final String fieldList = context.getProperty(FIELD_LIST).getValue();
 
 		final AtomicReference<Map<Integer, List<String>>> result = new AtomicReference<Map<Integer, List<String>>>();
 		result.set(new HashMap<Integer, List<String>>());
@@ -182,9 +206,9 @@ public class PutArcGIS extends AbstractProcessor {
 			return;
 		}
 
-		if ((headerFilename != null) && (headerFilename.length() > 0)) {
+		if ((fieldList != null) && (fieldList.length() > 0)) {
 			try {
-				InputStream is = new FileInputStream(new File(headerFilename));
+				InputStream is = IOUtils.toInputStream(fieldList, "UTF-8"); 
 				parseCSVStream(is, charSetName, result);
 			} catch (Exception e) {
 				getLogger().error(ExceptionUtils.getStackTrace(e));
@@ -194,100 +218,107 @@ public class PutArcGIS extends AbstractProcessor {
 
 		Map<String, String> data = flowFile.getAttributes();
 		data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
-		if (CSV.equals(typeOfFile)) {
-			
-			session.read(flowFile, (InputStream inputStream) -> {
-				try {
-					parseCSVStream (inputStream, charSetName, result);
-				} catch (final Exception e) {
-					getLogger().error(ExceptionUtils.getStackTrace(e));
-					session.transfer(session.get(), FAILED);
-				}
-			});
-			if (getLogger().isDebugEnabled()) {
-				getLogger().debug("Total number of lines parsed " + String.valueOf(result.get().size()));
+
+		session.read(flowFile, (InputStream inputStream) -> {
+			try {
+				parseCSVStream(inputStream, charSetName, result);
+			} catch (final Exception e) {
+				getLogger().error(ExceptionUtils.getStackTrace(e));
+				session.transfer(session.get(), FAILED);
 			}
-			
-			List<String> columnNames = result.get().remove(0);
-			ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE).asControllerService(ArcGISLayerServiceAPI.class);
-			boolean headerValid = service.isHeaderValid(columnNames);
-			// The first line in the CSV files does not contain a valid list of columns inside the featureTable
-			if (!headerValid) {
-				StringBuffer sb = new StringBuffer();
-				columnNames.forEach(column -> sb.append(column).append(","));
-				getLogger().error("File header invalid : " + sb.toString());
+		});
+		if (getLogger().isDebugEnabled()) {
+			getLogger().debug("Total number of lines parsed " + String.valueOf(result.get().size()));
+		}
+
+		List<String> columnNames = result.get().remove(0);
+		ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE)
+				.asControllerService(ArcGISLayerServiceAPI.class);
+		boolean headerValid = service.isHeaderValid(columnNames);
+		// The first line in the CSV files does not contain a valid list of
+		// columns inside the featureTable
+		if (!headerValid) {
+			StringBuffer sb = new StringBuffer();
+			columnNames.forEach(column -> sb.append(column).append(","));
+			getLogger().error("File header invalid : " + sb.toString());
+			session.transfer(flowFile, FAILED);
+			return;
+		}
+
+		List<Map<String, String>> records = new ArrayList<Map<String, String>>();
+
+		result.get().forEach((key, values) -> {
+			counter = 0;
+			Map<String, String> record = new HashMap<String, String>();
+			// counter is used to be mapped with the list of column names parsed
+			// from the first line
+			// counter is a field in order to be modified in the lambda
+			// expression
+			// The value of columnNames.get(counter++) contains the name of the
+			// field retrieved from the header line
+			values.forEach(value -> record.put(columnNames.get(counter++), value));
+			records.add(record);
+			if (getLogger().isDebugEnabled()) {
+				record.forEach((col, value) -> getLogger().debug(col + " : " + value));
+			}
+		});
+
+		Map<String, Object> settings = new HashMap<String, Object>();
+		final String spatialReference = context.getProperty(SPATIAL_REFERENCE).getValue();
+		if (spatialReference != null && spatialReference.length() > 0) {
+			settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
+		}
+
+		int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
+		final int nb_total_records = records.size();
+		getLogger().debug(
+				"Processing " + nb_total_records + " records by blocks of " + String.valueOf(quotity) + " elements");
+
+		while (!records.isEmpty()) {
+			List<Map<String, String>> processingRecords = new ArrayList<Map<String, String>>();
+			for (int i = 0; i < quotity; i++) {
+				processingRecords.add(records.remove(0));
+				if (records.isEmpty())
+					break;
+			}
+			try {
+				getLogger().debug("Processing " + processingRecords.size() + " records...");
+				service.execute(processingRecords, settings);
+				getLogger().debug("..." + processingRecords.size() + " records processed");
+			} catch (final ProcessException pe) {
+				getLogger().error(ExceptionUtils.getStackTrace(pe));
+				if (pe.getCause() != null) {
+					getLogger().error(ExceptionUtils.getStackTrace(pe.getCause()));
+				}
 				session.transfer(flowFile, FAILED);
 				return;
 			}
-			
-			List<Map<String, String>> records = new ArrayList<Map<String, String>>();
-			
-			result.get().forEach((key, values) -> {
-				counter = 0;
-				Map<String, String> record = new HashMap<String, String>();
-				// counter is used to be mapped with the list of column names parsed from the first line
-				// counter is a field in order to be modified in the lambda expression
-				// The value of columnNames.get(counter++) contains the name of the field retrieved from the header line
-				values.forEach(value -> record.put(columnNames.get(counter++), value) );
-				records.add (record);
-				if (getLogger().isDebugEnabled()) {
-					record.forEach((col, value) -> getLogger().debug(col + " : " + value));
-				}
-			});
-			
-			Map<String, Object> settings = new HashMap<String, Object>();
-			final String spatialReference = context.getProperty(SPATIAL_REFERENCE).getValue();
-			if (spatialReference != null && spatialReference.length() >0) {
-				settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
-			}
-			
-			int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
-			final int nb_total_records = records.size();
-			getLogger().debug("Processing " + nb_total_records + " records by blocks of " + String.valueOf(quotity) + " elements");
-			
-			while (!records.isEmpty()) {
-				List<Map<String, String>> processingRecords = new ArrayList<Map<String, String>>();
-				for (int i = 0; i < quotity; i++) {
-					processingRecords.add(records.remove(0));
-					if (records.isEmpty())
-						break;
-				}
-				try {
-					getLogger().debug("Processing " + processingRecords.size() + " records...");
-					service.execute(processingRecords, settings);
-					getLogger().debug("..." + processingRecords.size() + " records processed");
-				} catch (final ProcessException pe) {
-					getLogger().error(ExceptionUtils.getStackTrace(pe));
-					if (pe.getCause() != null) {
-						getLogger().error(ExceptionUtils.getStackTrace(pe.getCause()));
-					}
-					session.transfer(flowFile, FAILED);
-					return;
-				}
-			}
-			getLogger().debug("At all " + nb_total_records + " records processed");
-			
-		} else {
-			throw new RuntimeException ("What's The Fuck... Should not pass here !");
 		}
+		getLogger().debug("At all " + nb_total_records + " records processed");
 
 		session.transfer(flowFile, SUCCESS);
 	}
 
 	/**
 	 * Parse a CSV Stream and fill the collection result
-	 * @param inputStream the inputStream accessing either the flowFile, or the header file
-	 * @param charSetName the current character set
-	 * @param result atomicReference pointed out the parsed content of the CSV file
+	 * 
+	 * @param inputStream
+	 *            the inputStream accessing either the flowFile, or the header
+	 *            file
+	 * @param charSetName
+	 *            the current character set
+	 * @param result
+	 *            atomicReference pointed out the parsed content of the CSV file
 	 * @return the content of the file parsed
-	 * @throws UnsupportedEncodingException 
-	 * @throws IOException 
+	 * @throws UnsupportedEncodingException
+	 * @throws IOException
 	 */
-	public void parseCSVStream (final InputStream inputStream, final String charSetName, final AtomicReference<Map<Integer, List<String>>> result) throws UnsupportedEncodingException, IOException  {
-		
+	public void parseCSVStream(final InputStream inputStream, final String charSetName,
+			final AtomicReference<Map<Integer, List<String>>> result) throws UnsupportedEncodingException, IOException {
+
 		BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charSetName));
 		StringBuilder sb;
-		
+
 		final Map<Integer, List<String>> lines = result.get();
 		int lineNumber = lines.size();
 
@@ -297,5 +328,5 @@ public class PutArcGIS extends AbstractProcessor {
 			lines.put(lineNumber++, line);
 		}
 	}
-	
+
 }

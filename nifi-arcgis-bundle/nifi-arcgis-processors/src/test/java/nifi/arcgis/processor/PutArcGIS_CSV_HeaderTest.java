@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -57,8 +58,10 @@ public class PutArcGIS_CSV_HeaderTest {
     @Test
     public void testProcessorSimpleCSV_test_HEADERFAILED() throws Exception {
     	
-        testRunner.setProperty(PutArcGIS.HEADER, this.getClass().getClassLoader().getResource("header-invalid").getFile());
-        
+        testRunner.setProperty(PutArcGIS.FIELD_LIST, "nme;latitude;longitude");
+
+        // the ProcessorService is supposed to validate the column lists
+        // We mock this behavior in this MockControllerService
         testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
 
     	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_Noheader_OK.csv");
@@ -81,7 +84,7 @@ public class PutArcGIS_CSV_HeaderTest {
     	
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
-        testRunner.setProperty(PutArcGIS.HEADER, this.getClass().getClassLoader().getResource("header-valid").getFile());
+        testRunner.setProperty(PutArcGIS.FIELD_LIST, "name;latitude;longitude");
 
         final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
     
@@ -89,12 +92,19 @@ public class PutArcGIS_CSV_HeaderTest {
     	testRunner.enqueue(content);
     	
     	// Launch the runner
-    	testRunner.run(1);
+    	testRunner.run(1);    	
         testRunner.assertQueueEmpty();
     	testRunner.assertValid();
 
     	List<MockFlowFile> successFiles = testRunner.getFlowFilesForRelationship(PutArcGIS.SUCCESS);
     	assertEquals(1, successFiles.size());
+    	
+    	List<Map<String, String>> parsedContent = testRunner.getControllerService("arcgis-service", MockControllerService.class).getExecuteArg0();
+    	Map<String, String> lineHeader = parsedContent.get(0);  
+    	System.out.println(lineHeader);
+    	assertEquals("Rouen", lineHeader.get("name"));
+    	assertEquals("49.433333", lineHeader.get("latitude"));
+    	assertEquals("1.083333", lineHeader.get("longitude"));
     }
 
 }
