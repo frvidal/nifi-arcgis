@@ -84,6 +84,13 @@
 		    <version>42.0.0.jre7</version>
 			<scope>test</scope>
 		</dependency>
+ 
+ 		<!-- https://mvnrepository.com/artifact/com.jayway.awaitility/awaitility -->
+		<dependency>
+    		<groupId>com.jayway.awaitility</groupId>
+    		<artifactId>awaitility</artifactId>
+    		<version>1.7.0</version>
+		</dependency>
         
     </dependencies>
 </project>

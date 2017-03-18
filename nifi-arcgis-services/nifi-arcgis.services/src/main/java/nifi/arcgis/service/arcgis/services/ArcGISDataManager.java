@@ -3,6 +3,9 @@ package nifi.arcgis.service.arcgis.services;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO;
+
+import static com.jayway.awaitility.Awaitility.await;
 
 import java.net.URL;
 import java.text.MessageFormat;
@@ -13,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.components.ValidationResult;
@@ -109,6 +114,11 @@ public class ArcGISDataManager {
 	private ServiceFeatureTable featureTable = null;
 
 	/*
+	 * Default radius for the search mechanism. This value is supposed to be overrided with the passed setting  
+	 */
+	private final int DEFAULT_RADIUS = 1000;
+	
+	/*
 	 * Check ArcGIS server connection with the current parameters.
 	 * 
 	 * @param arcgisURL URL of the ArcGIS server
@@ -125,8 +135,6 @@ public class ArcGISDataManager {
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
 
-	
-		
 		dataOperationTerminated = false;
 
 		final ValidationResult.Builder builder = new ValidationResult.Builder();
@@ -292,7 +300,7 @@ public class ArcGISDataManager {
 			if (featureTable.getLoadStatus() == LoadStatus.NOT_LOADED) {
 				featureTable.loadAsync();
 			} else {
-				updateData(records, settings);
+				insertData(records, settings);
 				return;
 			}
 		}
@@ -302,7 +310,7 @@ public class ArcGISDataManager {
 
 			if (ls.equals(LoadStatus.LOADED)) {
 				try {
-					updateData(records, settings);
+					insertData(records, settings);
 				} catch (Exception e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -323,6 +331,97 @@ public class ArcGISDataManager {
 	 *            SpatialReference
 	 */
 	public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings)
+			throws Exception {
+
+		for (Map<String, String> record : records) {
+
+			Feature feature;
+			if (TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY_GEO))) {
+				feature = geoQuery(record, settings);
+			}
+		}
+	}
+
+	/**
+	 * Select a record in the featureTable in a circle around a latitude and a
+	 * longitude.
+	 * 
+	 * @param record
+	 *            actual record for processing
+	 * @param settings
+	 *            current settings of data management
+	 * @return the selected featureLayer
+	 * @throws Exception
+	 */
+	Feature geoQuery(Map<String, String> record, final Map<String, Object> settings) throws Exception {
+
+		SpatialReference spatialReference = getSpatialReference(settings);
+
+		Geometry geometry = null;
+		if (featureTable.getGeometryType().equals(GeometryType.POINT)) {
+			geometry = createPoint(record, settings);
+		}
+		logger.debug(geometry.toJson());
+		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS)) 
+				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS)
+				: DEFAULT_RADIUS;
+			
+		
+		Polygon searchAround = GeometryEngine.buffer(geometry, radius);
+
+		QueryParameters queryParams = new QueryParameters();
+		queryParams.setGeometry(searchAround);
+		queryParams.setOutSpatialReference(spatialReference);
+		queryParams.setSpatialRelationship(SpatialRelationship.INTERSECTS);
+
+		final FeatureLayer featureLayer = new FeatureLayer(featureTable);
+
+		final ListenableFuture<FeatureQueryResult> future = featureLayer.selectFeaturesAsync(queryParams,
+				SelectionMode.NEW);
+
+		// Selected feature returned by this function
+		final AtomicReference<Feature> selectedFeature = new AtomicReference<Feature>();
+		
+		// The purpose of queryDone is to wait for query completion before returning the result
+		AtomicBoolean queryDone = new AtomicBoolean(false);
+		future.addDoneListener(() -> {
+			FeatureQueryResult result;
+			try {
+				result = future.get();
+			} catch (Exception e) {
+				ArcGISDataManager.this.logger.error(ExceptionUtils.getStackTrace(e));
+				throw new RuntimeException(e);
+			}
+			
+			final AtomicReference<Double> closestDistance = new AtomicReference<Double>(new Double(Double.MAX_VALUE));
+			result.forEach(feature -> {
+				double distance = GeometryEngine.distanceBetween(searchAround, feature.getGeometry());
+				if ( distance < closestDistance.get() ) {
+					selectedFeature.set(feature);
+					closestDistance.set(distance);
+					ComponentLog logger = ArcGISDataManager.this.logger;
+					if ( logger.isDebugEnabled()) {
+						Map<String, Object> attributes = selectedFeature.get().getAttributes();
+						logger.debug("Feature select " + attributes.get("name") + " @ the distance " + closestDistance.get());
+					}
+				}
+			});
+			queryDone.set(true);
+		});
+		await().untilTrue(queryDone);
+		return selectedFeature.get();
+	}
+
+	/**
+	 * Add a collection of features into the table town into the geo_db database
+	 * 
+	 * @param records
+	 *            The list of records to add
+	 * @param settings
+	 *            the data settings associated, such as the current
+	 *            SpatialReference
+	 */
+	public void insertData(final List<Map<String, String>> records, final Map<String, Object> settings)
 			throws Exception {
 
 		if (!featureTable.getGeometryType().equals(GeometryType.POINT)) {
@@ -353,7 +452,7 @@ public class ArcGISDataManager {
 		if (featureTable.canAdd()) {
 
 			dataOperationTerminated = false;
-			
+
 			ListenableFuture<Void> res = featureTable.addFeaturesAsync(features);
 			res.addDoneListener(() -> {
 				try {
@@ -362,15 +461,15 @@ public class ArcGISDataManager {
 						featureTable.applyEditsAsync().addDoneListener(() -> applyEdits(featureTable));
 					}
 				} catch (Exception e) {
-					ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e)); 
+					ArcGISDataManager.this.logger
+							.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
 
 				} finally {
 					synchronized (locker) {
 						dataOperationTerminated = true;
 						locker.notify();
-					}					
+					}
 				}
-
 
 			});
 
@@ -379,7 +478,7 @@ public class ArcGISDataManager {
 					locker.wait();
 				}
 			}
-			
+
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
 		}
@@ -430,23 +529,23 @@ public class ArcGISDataManager {
 		editResult.addDoneListener(() -> {
 			try {
 				List<FeatureEditResult> edits = editResult.get();
-				ArcGISDataManager.this.logger.debug("Edition applied (edits.size="+edits.size()+")"); 
+				ArcGISDataManager.this.logger.debug("Edition applied (edits.size=" + edits.size() + ")");
 				// check if the server edit was successful
 				if (edits != null && edits.size() > 0 && edits.get(0).hasCompletedWithErrors()) {
 					throw edits.get(0).getError();
 				}
-				
+
 			} catch (InterruptedException | ExecutionException e) {
-				ArcGISDataManager.this.logger.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
+				ArcGISDataManager.this.logger
+						.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
 			}
 			synchronized (lockerEditions) {
 				dataOperationTerminated = true;
-				lockerEditions.notify ();
+				lockerEditions.notify();
 				ArcGISDataManager.this.logger.debug("Releasing lockerEditions");
 			}
 		});
-		
-		
+
 		while (!dataOperationTerminated) {
 			synchronized (lockerEditions) {
 				ArcGISDataManager.this.logger.debug("Starting to wait");
@@ -454,7 +553,7 @@ public class ArcGISDataManager {
 					lockerEditions.wait();
 				} catch (InterruptedException e) {
 					this.logger.error(ExceptionUtils.getStackTrace(e));
-				}			
+				}
 			}
 			ArcGISDataManager.this.logger.debug("Released");
 		}
@@ -525,8 +624,9 @@ public class ArcGISDataManager {
 		return spatialReference;
 	}
 
-	public List<Map<String, Object>> search(final int x, final int y, final Map<String, Object> settings, final int searchRadius)
-			throws Exception {
+/*	
+	public List<Map<String, Object>> search(final int x, final int y, final Map<String, Object> settings,
+			final int searchRadius) throws Exception {
 
 		dataOperationTerminated = false;
 
@@ -554,7 +654,7 @@ public class ArcGISDataManager {
 				SelectionMode.NEW);
 		future.addDoneListener(() -> {
 			try {
-									
+
 				FeatureQueryResult result;
 				result = future.get();
 
@@ -586,5 +686,5 @@ public class ArcGISDataManager {
 		}
 		return results;
 	}
-
+*/
 }

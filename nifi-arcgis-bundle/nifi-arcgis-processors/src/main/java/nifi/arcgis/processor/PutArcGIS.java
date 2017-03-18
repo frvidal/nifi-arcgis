@@ -20,17 +20,11 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.StringBufferInputStream;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,8 +44,6 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.ValidationContext;
-import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -61,10 +53,6 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
-import com.esri.arcgisruntime.internal.jni.de;
-import com.esri.arcgisruntime.internal.jni.ex;
-
-import groovy.model.NestedValueModel;
 import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
 import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
@@ -106,11 +94,11 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET)
 			.addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
 
-	public static final PropertyDescriptor FIELD_LIST = new PropertyDescriptor.Builder().name("List of fields of the target table")
-			.description(
-					"Comma separated list columns of the target featureTable.\\n" +
-					"FOR CSV file : If any field is mentionned, the processor system will guess the CSV file contains this header.\\n"+
-					"FOR JSON file : all fields in the JSON are candidate to udate")
+	public static final PropertyDescriptor FIELD_LIST = new PropertyDescriptor.Builder()
+			.name("List of fields of the target table")
+			.description("Comma separated list columns of the target featureTable.\\n"
+					+ "FOR CSV file : If any field is mentionned, the processor system will guess the CSV file contains this header.\\n"
+					+ "FOR JSON file : all fields in the JSON are candidate to udate")
 			.addValidator(new StandardValidators.StringLengthValidator(0, 512)).required(false).build();
 
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
@@ -176,44 +164,73 @@ public class PutArcGIS extends AbstractProcessor {
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
-		final String typeOfFile = context.getProperty(TYPE_OF_FILE).getValue();
-		if (JSON.equals(typeOfFile)) {
-			getLogger().error(JSON + " file workflow is not implemented yet !");
-			session.transfer(session.get(), FAILED);
-			return;
-		}
+		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
+		final String fieldList = context.getProperty(FIELD_LIST).getValue();
 
-		if (CSV.equals(typeOfFile)) {
-			handleCSVFlow(context, session);
+		final AtomicReference<Map<Integer, List<String>>> ref_dataParsed = new AtomicReference<Map<Integer, List<String>>>();
+		ref_dataParsed.set(new HashMap<Integer, List<String>>());
+
+		try {
+			if ((fieldList != null) && (fieldList.length() > 0)) {
+				InputStream is = IOUtils.toInputStream(fieldList, "UTF-8");
+				parseCSVStream(is, charSetName, ref_dataParsed);
+			}
+			
+			final String typeOfFile = context.getProperty(TYPE_OF_FILE).getValue();
+			if (JSON.equals(typeOfFile)) {
+				handleJSONFlow(context, session, ref_dataParsed);
+			}
+
+			if (CSV.equals(typeOfFile)) {
+				handleCSVFlow(context, session, ref_dataParsed);
+			}
+
+		} catch (Exception e) {
+			getLogger().error(ExceptionUtils.getStackTrace(e));
+			session.transfer(session.get(), FAILED);
 		}
 	}
 
 	/**
+	 * Parse the <b><big>JSON</big></b> Flow and save it in an atomic reference.
 	 * 
 	 * @param context
+	 *            the current flow context
 	 * @param session
+	 *            the current session context
+	 * @param reference
+	 *            Atomic reference pointed to the data parsed in a list of a Map
+	 *            records <b>"row-number"</b>:"list of data values"
+	 *            
 	 * @throws ProcessException
 	 */
-	private void handleCSVFlow(final ProcessContext context, final ProcessSession session) throws ProcessException {
+	private void handleJSONFlow(final ProcessContext context, final ProcessSession session,
+			final AtomicReference<Map<Integer, List<String>>> ref_dataParsed) throws ProcessException {
+
+	}
+
+	/**
+	 * Parse the <b><big>CSV</big></b> Flow and save it in an atomic reference.
+	 * 
+	 * @param context
+	 *            the current flow context
+	 * @param session
+	 *            the current session context
+	 * @param ref_dataParsed
+	 *            Atomic reference pointed to the data parsed in list of a Map
+	 *            records <b>"row-number"</b>:"list of data values"
+	 *            
+	 * @throws ProcessException
+	 */
+	private void handleCSVFlow(final ProcessContext context, final ProcessSession session,
+			final AtomicReference<Map<Integer, List<String>>> ref_dataParsed) throws ProcessException {
 
 		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
-		final String fieldList = context.getProperty(FIELD_LIST).getValue();
 
-		final AtomicReference<Map<Integer, List<String>>> result = new AtomicReference<Map<Integer, List<String>>>();
-		result.set(new HashMap<Integer, List<String>>());
+		ref_dataParsed.set(new HashMap<Integer, List<String>>());
 		final FlowFile flowFile = session.get();
 		if (flowFile == null) {
 			return;
-		}
-
-		if ((fieldList != null) && (fieldList.length() > 0)) {
-			try {
-				InputStream is = IOUtils.toInputStream(fieldList, "UTF-8"); 
-				parseCSVStream(is, charSetName, result);
-			} catch (Exception e) {
-				getLogger().error(ExceptionUtils.getStackTrace(e));
-				session.transfer(session.get(), FAILED);
-			}
 		}
 
 		Map<String, String> data = flowFile.getAttributes();
@@ -221,17 +238,17 @@ public class PutArcGIS extends AbstractProcessor {
 
 		session.read(flowFile, (InputStream inputStream) -> {
 			try {
-				parseCSVStream(inputStream, charSetName, result);
+				parseCSVStream(inputStream, charSetName, ref_dataParsed);
 			} catch (final Exception e) {
 				getLogger().error(ExceptionUtils.getStackTrace(e));
 				session.transfer(session.get(), FAILED);
 			}
 		});
 		if (getLogger().isDebugEnabled()) {
-			getLogger().debug("Total number of lines parsed " + String.valueOf(result.get().size()));
+			getLogger().debug("Total number of lines parsed " + String.valueOf(ref_dataParsed.get().size()));
 		}
 
-		List<String> columnNames = result.get().remove(0);
+		List<String> columnNames = ref_dataParsed.get().remove(0);
 		ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE)
 				.asControllerService(ArcGISLayerServiceAPI.class);
 		boolean headerValid = service.isHeaderValid(columnNames);
@@ -247,7 +264,7 @@ public class PutArcGIS extends AbstractProcessor {
 
 		List<Map<String, String>> records = new ArrayList<Map<String, String>>();
 
-		result.get().forEach((key, values) -> {
+		ref_dataParsed.get().forEach((key, values) -> {
 			counter = 0;
 			Map<String, String> record = new HashMap<String, String>();
 			// counter is used to be mapped with the list of column names parsed
@@ -300,26 +317,26 @@ public class PutArcGIS extends AbstractProcessor {
 	}
 
 	/**
-	 * Parse a CSV Stream and fill the collection result
+	 * Parse a CSV Stream and fill the collection result.
 	 * 
 	 * @param inputStream
 	 *            the inputStream accessing either the flowFile, or the header
 	 *            file
 	 * @param charSetName
 	 *            the current character set
-	 * @param result
-	 *            atomicReference pointed out the parsed content of the CSV file
+	 * @param ref_dataParsed
+	 *            Atomic reference pointed out the parsed content of the CSV file
 	 * @return the content of the file parsed
 	 * @throws UnsupportedEncodingException
 	 * @throws IOException
 	 */
 	public void parseCSVStream(final InputStream inputStream, final String charSetName,
-			final AtomicReference<Map<Integer, List<String>>> result) throws UnsupportedEncodingException, IOException {
+			final AtomicReference<Map<Integer, List<String>>> ref_dataParsed) throws UnsupportedEncodingException, IOException {
 
 		BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charSetName));
 		StringBuilder sb;
 
-		final Map<Integer, List<String>> lines = result.get();
+		final Map<Integer, List<String>> lines = ref_dataParsed.get();
 		int lineNumber = lines.size();
 
 		while ((sb = FileManager.readLine(reader)) != null) {

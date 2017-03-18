@@ -39,6 +39,8 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 
+import com.jayway.jsonpath.internal.token.ArrayPathToken.Operation;
+
 @Tags({ "ArcGIS", "put" })
 @CapabilityDescription("ControllerService in charge of accessing a featureTable on an ArcGIS server.")
 public class ArcGISLayerService extends AbstractControllerService implements ArcGISLayerServiceAPI {
@@ -238,7 +240,16 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		}
 		
 		try {
-			gisDataManager.updateData(records, settings);
+			if (!settings.containsKey(OPERATION)) {
+				throw new Exception("Mandary type of operation is not filled");
+			}
+			
+			if (OPERATION_INSERT.equals(settings.get(OPERATION))) {
+				gisDataManager.insertData(records, settings);
+			}
+			if (OPERATION_UPDATE.equals(settings.get(OPERATION))) {
+				gisDataManager.updateData(records, settings);
+			}
 		} catch (Exception e) {
 			getLogger().error(ExceptionUtils.getStackTrace(e));
 			throw new ProcessException(e.getMessage());

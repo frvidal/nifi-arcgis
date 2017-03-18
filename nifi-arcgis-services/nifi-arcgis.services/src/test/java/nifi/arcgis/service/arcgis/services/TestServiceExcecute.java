@@ -25,6 +25,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.omg.PortableServer.ServantRetentionPolicyValue;
 
+import com.esri.arcgisruntime.data.Feature;
+
 /**
  * Test the execution of a flow
  * @author Fr&eacute;d&eacute;ric VIDAL
@@ -69,9 +71,9 @@ public class TestServiceExcecute {
         vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "MyMapService");
         assertTrue (vr.isValid());
  
-        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "geo_db.sde.TOWN");
+        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "geo_db.sde.CITY");
         assertTrue (vr.isValid());
-        
+ 
         runner.enableControllerService(service);
         runner.assertNotValid(service);
         
@@ -88,18 +90,20 @@ public class TestServiceExcecute {
         record2.put("lattitude", "-3.333333");
         record2.put("longitude", "48.766667");
         records.add(record2);
-        
+
         Map<String, Object> settings = new HashMap<String, Object>();
         settings.put(ArcGISLayerServiceAPI.SPATIAL_REFERENCE, ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84);
+        settings.put(ArcGISLayerServiceAPI.OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
+        settings.put(ArcGISLayerServiceAPI.RADIUS, 1000);
         
         ArcGISDataManager dataManager = new ArcGISDataManager(runner.getLogger());
-        dataManager.checkConnection("http://localhost:6080", null, "MyMapService", "geo_db.sde.TOWN");
+        vr = dataManager.checkConnection("http://localhost:6080", null, "city", "geo_db.sde.CITY");
+        assertTrue (vr.isValid());
         service.setArcGISDataManager(dataManager);
         service.execute(records, settings);      
         
-        List<Map<String, Object>> results = dataManager.search(50, 50, settings, 10000);
-        
-        assertEquals(2, results.size());
+        Feature feature = dataManager.geoQuery(record, settings);
+        assertEquals("city-test", feature.getAttributes().get("name"));
         
         cleanupDB();
     }
@@ -110,7 +114,7 @@ public class TestServiceExcecute {
     	Connection connection = null;
     	connection = DriverManager.getConnection(
     	   "jdbc:postgresql://localhost:5432/geo_db","sde", "sde");
-    	connection.createStatement().execute("delete from town");
+    	connection.createStatement().execute("delete from city");
     	connection.close();
     	
     }

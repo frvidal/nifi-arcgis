@@ -60,6 +60,7 @@
 			<artifactId>arcgis-java</artifactId>
 			<version>100.0.0</version>
 		</dependency>
+		
 		<!-- NIFI ArcGIS Controller Service -->
 		<dependency>
 			<groupId>nifi.arcgis.service</groupId>

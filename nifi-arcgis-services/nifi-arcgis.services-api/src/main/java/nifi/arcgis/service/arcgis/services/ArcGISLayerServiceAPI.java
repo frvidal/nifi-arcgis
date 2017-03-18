@@ -28,10 +28,21 @@ import org.apache.nifi.processor.exception.ProcessException;
 @CapabilityDescription("Data management accessor for ArcGIS server.")
 public interface ArcGISLayerServiceAPI extends ControllerService {
 
+	// Type of spatial reference
 	public final static String SPATIAL_REFERENCE = "SPATIAL_REFERENCE";
 	public final static String SPATIAL_REFERENCE_WGS84 = "Wgs84";
 	public final static String SPATIAL_REFERENCE_WEBMERCATOR = "WebMercator";
 
+	// Type of operation executed on the ArcGIS server
+	public final static String OPERATION = "OPE";
+	public final static String OPERATION_INSERT = "I";
+	public final static String OPERATION_UPDATE = "U";
+	
+	public final static String TYPE_OF_QUERY = "QUERY";
+	public final static String TYPE_OF_QUERY_GEO = "GEO";
+	
+	public final static String RADIUS = "RADIUS";
+	
 	/**
 	 * <p> 
 	 * Validate the header for <b>CSV file</b> : The header must contain the list of column names for the targeted featureService.
