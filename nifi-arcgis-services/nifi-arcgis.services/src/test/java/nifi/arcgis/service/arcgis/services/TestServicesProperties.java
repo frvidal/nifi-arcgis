@@ -54,9 +54,9 @@ public class TestServicesProperties {
 		if (!vr.isValid()) runner.getLogger().debug(vr.getExplanation());
 		assertTrue(vr.isValid());
 		
-		vr = runner.setProperty(service, FEATURE_SERVER, "MyMapService");
+		vr = runner.setProperty(service, FEATURE_SERVER, "city");
 		assertTrue(vr.isValid());
-		vr = runner.setProperty(service, LAYER_NAME, "geo_db.sde.TOWN");
+		vr = runner.setProperty(service, LAYER_NAME, "geo_db.sde.CITY");
 		assertTrue(vr.isValid());
 		
 		// 
