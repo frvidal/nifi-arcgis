@@ -74,16 +74,6 @@ public class ArcGISDataManager {
 	private final Map<String, ArcGISTableField> associateFields = new HashMap<String, ArcGISTableField>();
 
 	/**
-	 * Locker
-	 */
-	private final Object locker = new Object();
-
-	/**
-	 * Locker
-	 */
-	private final Object lockerEditions = new Object();
-
-	/**
 	 * Main constructor
 	 * 
 	 * @param nifiLogger
@@ -92,11 +82,6 @@ public class ArcGISDataManager {
 	public ArcGISDataManager(ComponentLog nifiLogger) {
 		this.logger = nifiLogger;
 	}
-
-	/**
-	 * This variable is used to verify that the data operation is terminated
-	 */
-	private boolean dataOperationTerminated = false;
 
 	/**
 	 * Current working REST resource
@@ -135,7 +120,8 @@ public class ArcGISDataManager {
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
 
-		dataOperationTerminated = false;
+		// This variable is used to verify that the data operation is terminated
+		final AtomicBoolean dataOperationTerminated = new AtomicBoolean(false);
 
 		final ValidationResult.Builder builder = new ValidationResult.Builder();
 
@@ -224,10 +210,7 @@ public class ArcGISDataManager {
 							: featureTable.getLoadError().getCause().toString();
 					builder.subject("url ArcGIS & layer name").input(arcgisURL).explanation(errorMessage).valid(false);
 				}
-				dataOperationTerminated = true;
-				synchronized (locker) {
-					locker.notify();
-				}
+				dataOperationTerminated.set(true);
 			};
 
 			featureTable.addDoneLoadingListener(listener);
@@ -240,16 +223,10 @@ public class ArcGISDataManager {
 
 		}
 
-		while (!dataOperationTerminated) {
-			synchronized (locker) {
-				try {
-					locker.wait();
-				} catch (InterruptedException e) {
-					return builder.input(currentRestResource).explanation(e.getMessage()).valid(false)
-							.subject(currentSubject).build();
-				}
-			}
-		}
+		await().untilTrue(dataOperationTerminated);
+
+//TODO INTERUPT EXCEPTION HAS TO BE HANDLE 
+// 		return builder.input(currentRestResource).explanation(e.getMessage()).valid(false).subject(currentSubject).build();
 
 		return builder.build();
 
@@ -424,6 +401,7 @@ public class ArcGISDataManager {
 	public void insertData(final List<Map<String, String>> records, final Map<String, Object> settings)
 			throws Exception {
 
+		final AtomicBoolean dataOperationTerminated = new AtomicBoolean(false);
 		if (!featureTable.getGeometryType().equals(GeometryType.POINT)) {
 			throw new RuntimeException("What's the fuck... Other geometries than point are not implemented yet !");
 		}
@@ -451,8 +429,6 @@ public class ArcGISDataManager {
 		logger.debug("Adding " + features.size() + " features...");
 		if (featureTable.canAdd()) {
 
-			dataOperationTerminated = false;
-
 			ListenableFuture<Void> res = featureTable.addFeaturesAsync(features);
 			res.addDoneListener(() -> {
 				try {
@@ -465,19 +441,12 @@ public class ArcGISDataManager {
 							.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
 
 				} finally {
-					synchronized (locker) {
-						dataOperationTerminated = true;
-						locker.notify();
-					}
+					dataOperationTerminated.set(true);
 				}
 
 			});
 
-			while (!dataOperationTerminated) {
-				synchronized (locker) {
-					locker.wait();
-				}
-			}
+			await().untilTrue(dataOperationTerminated);
 
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
@@ -524,6 +493,8 @@ public class ArcGISDataManager {
 	 */
 	private void applyEdits(ServiceFeatureTable featureTable) {
 
+		final AtomicBoolean editionApplied = new AtomicBoolean(false);
+		
 		// apply the changes to the server
 		ListenableFuture<List<FeatureEditResult>> editResult = featureTable.applyEditsAsync();
 		editResult.addDoneListener(() -> {
@@ -539,24 +510,12 @@ public class ArcGISDataManager {
 				ArcGISDataManager.this.logger
 						.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
 			}
-			synchronized (lockerEditions) {
-				dataOperationTerminated = true;
-				lockerEditions.notify();
-				ArcGISDataManager.this.logger.debug("Releasing lockerEditions");
-			}
+			editionApplied.set(true);
 		});
 
-		while (!dataOperationTerminated) {
-			synchronized (lockerEditions) {
-				ArcGISDataManager.this.logger.debug("Starting to wait");
-				try {
-					lockerEditions.wait();
-				} catch (InterruptedException e) {
-					this.logger.error(ExceptionUtils.getStackTrace(e));
-				}
-			}
-			ArcGISDataManager.this.logger.debug("Released");
-		}
+		//TODO InterruptedException has to be handled
+		await().untilTrue(editionApplied);
+		
 	}
 
 	/**
