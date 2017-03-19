@@ -18,6 +18,7 @@ package nifi.arcgis.processor;
 
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -27,6 +28,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -35,7 +37,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -46,6 +47,8 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -121,6 +124,11 @@ public class PutArcGIS extends AbstractProcessor {
 	private List<PropertyDescriptor> descriptors;
 
 	private Set<Relationship> relationships;
+	
+	/**
+	 * List of fields involved in the update order
+	 */
+	final AtomicReference<Map<Integer, List<String>>> ref_updateFieldList = new AtomicReference<Map<Integer, List<String>>>();
 
 	/**
 	 * The character set of the INPUT data, or an empty string if this property
@@ -172,7 +180,26 @@ public class PutArcGIS extends AbstractProcessor {
 	public void onScheduled(final ProcessContext context) {
 
 	}
+	
+	@Override
+	protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
+		
 
+		ref_updateFieldList.set(new HashMap<Integer, List<String>>());
+		final String charSetName = validationContext.getProperty(CHARACTER_SET_IN).getValue();
+		final String fileUpdateFieldList = validationContext.getProperty(FIELD_LIST_UPDATE).getValue();
+
+		if ((fileUpdateFieldList != null) && (fileUpdateFieldList.length() > 0)) {			
+			try {
+				final InputStream is = new FileInputStream(new File(fileUpdateFieldList));
+				parseCSVStream(is, charSetName, ref_updateFieldList);
+			} catch (final Exception e) {
+				getLogger().error(ExceptionUtils.getStackTrace(e));				
+			}
+		}
+		return super.customValidate(validationContext);
+	}
+	
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
@@ -299,7 +326,12 @@ public class PutArcGIS extends AbstractProcessor {
 		if (spatialReference != null && spatialReference.length() > 0) {
 			settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
 		}
-
+		final String updateFieldList = context.getProperty(FIELD_LIST_UPDATE).getValue();
+		if (updateFieldList != null && updateFieldList.length() > 0) {
+			settings.put(UPDATE_FIELD_LIST, ref_updateFieldList.get().get(0));
+		}
+		
+		
 		int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
 		final int nb_total_records = records.size();
 		getLogger().debug(

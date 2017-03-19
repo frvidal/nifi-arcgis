@@ -42,7 +42,15 @@ public interface ArcGISLayerServiceAPI extends ControllerService {
 	public final static String TYPE_OF_QUERY = "QUERY";
 	public final static String TYPE_OF_QUERY_GEO = "GEO";
 	
+	/**
+	 * This property represents the radius of the search-circle around a point in a geo-query search 
+	 */
 	public final static String RADIUS = "RADIUS";
+	
+	/**
+	 * This property represents the list of columns involved in the updates operation
+	 */
+	public final static String UPDATE_FIELD_LIST = "U_F_L";
 	
 	/**
 	 * <p> 
