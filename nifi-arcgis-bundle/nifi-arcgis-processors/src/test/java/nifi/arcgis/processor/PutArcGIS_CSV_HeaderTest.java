@@ -58,7 +58,8 @@ public class PutArcGIS_CSV_HeaderTest {
     @Test
     public void testProcessorSimpleCSV_test_HEADERFAILED() throws Exception {
     	
-        testRunner.setProperty(PutArcGIS.FIELD_LIST, "nme;latitude;longitude");
+    	testRunner.getLogger().debug(this.getClass().getClassLoader().getResource(".").getFile());
+        testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");
 
         // the ProcessorService is supposed to validate the column lists
         // We mock this behavior in this MockControllerService
@@ -82,12 +83,14 @@ public class PutArcGIS_CSV_HeaderTest {
     @Test
     public void testProcessorSimpleCSV_test_HEADERPASSED() throws Exception {
     	
+    	testRunner.getLogger().debug(this.getClass().getClassLoader().getResource("./header-ok").getFile());
+    	
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
-        testRunner.setProperty(PutArcGIS.FIELD_LIST, "name;latitude;longitude");
+        testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource("./header-ok").getFile());
 
         final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
-    
+        
     	// Add the content to the runner
     	testRunner.enqueue(content);
     	

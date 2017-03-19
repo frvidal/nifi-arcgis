@@ -4,6 +4,9 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT;
 
 import static com.jayway.awaitility.Awaitility.await;
 
@@ -312,10 +315,26 @@ public class ArcGISDataManager {
 
 		for (Map<String, String> record : records) {
 
-			Feature feature;
+			Feature feature = null;
 			if (TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY_GEO))) {
 				feature = geoQuery(record, settings);
 			}
+			if (feature == null) {
+				if (OPERATION_UPDATE.equals(OPERATION)) {
+					throw new Exception ("Cannot update this data. Record does not exist on the target featureTable");
+				}
+				
+				// We add one single record
+				// This is not the most effective way to handle this insertion 
+				if (OPERATION_UPDATE_OR_INSERT.equals(OPERATION)) {
+					List<Map<String, String>> singleRecordToAdd = new ArrayList<Map<String, String>>();
+					singleRecordToAdd.add(record);
+					insertData(singleRecordToAdd, settings);
+					feature = geoQuery(record, settings);
+				}
+			}	
+			
+			
 		}
 	}
 
@@ -582,68 +601,4 @@ public class ArcGISDataManager {
 		}
 		return spatialReference;
 	}
-
-/*	
-	public List<Map<String, Object>> search(final int x, final int y, final Map<String, Object> settings,
-			final int searchRadius) throws Exception {
-
-		dataOperationTerminated = false;
-
-		if (featureTable.getLoadStatus() != LoadStatus.LOADED) {
-			throw new Exception("What's the fuck... connection KO for an unknown reason !");
-		}
-
-		// The projection system of the data source
-		SpatialReference currentSpatialReference = getSpatialReference(settings);
-
-		// The area of research
-		Point searchPoint = Point.createWithM(x, y, 0, currentSpatialReference);
-		Polygon searchAroundPoint = GeometryEngine.buffer(searchPoint, searchRadius);
-
-		// Create a query with a buffer around the search point .
-		QueryParameters queryParams = new QueryParameters();
-		queryParams.setGeometry(searchAroundPoint);
-		queryParams.setOutSpatialReference(currentSpatialReference);
-		queryParams.setSpatialRelationship(SpatialRelationship.INTERSECTS);
-
-		final FeatureLayer featureLayer = new FeatureLayer(featureTable);
-
-		List<Map<String, Object>> results = new ArrayList<Map<String, Object>>();
-		final ListenableFuture<FeatureQueryResult> future = featureLayer.selectFeaturesAsync(queryParams,
-				SelectionMode.NEW);
-		future.addDoneListener(() -> {
-			try {
-
-				FeatureQueryResult result;
-				result = future.get();
-
-				result.forEach(feature -> {
-					if (logger.isDebugEnabled()) {
-						logger.debug("distance from the search Point "
-								+ GeometryEngine.distanceBetween(searchPoint, feature.getGeometry()));
-						Map<String, Object> attributes = feature.getAttributes();
-						attributes.keySet().forEach(key -> logger.debug(key + " " + attributes.get(key)));
-					}
-					results.add(feature.getAttributes());
-				});
-				synchronized (locker) {
-					dataOperationTerminated = true;
-					locker.notify();
-				}
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (ExecutionException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		});
-		while (!dataOperationTerminated) {
-			synchronized (locker) {
-				locker.wait();
-			}
-		}
-		return results;
-	}
-*/
 }

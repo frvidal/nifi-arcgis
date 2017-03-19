@@ -250,6 +250,9 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 			if (OPERATION_UPDATE.equals(settings.get(OPERATION))) {
 				gisDataManager.updateData(records, settings);
 			}
+			if (OPERATION_UPDATE_OR_INSERT.equals(settings.get(OPERATION))) {
+				gisDataManager.updateData(records, settings);
+			}
 		} catch (Exception e) {
 			getLogger().error(ExceptionUtils.getStackTrace(e));
 			throw new ProcessException(e.getMessage());

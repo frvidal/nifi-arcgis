@@ -20,6 +20,8 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -58,8 +60,10 @@ import nifi.arcgis.processor.utility.FileManager;
 import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
 
 /**
- * @author frvidal
- *
+ * Processor for ArcGIS
+ * ).
+ * 
+ * @author Fr&eacute;d&eacute;ric VIDAL
  */
 @Tags({ "put", "ArcGIS" })
 @CapabilityDescription("Sends the contents of a FlowFile into a feature table on an ArcGIS server.")
@@ -94,12 +98,19 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET)
 			.addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
 
-	public static final PropertyDescriptor FIELD_LIST = new PropertyDescriptor.Builder()
-			.name("List of fields of the target table")
-			.description("Comma separated list columns of the target featureTable.\\n"
-					+ "FOR CSV file : If any field is mentionned, the processor system will guess the CSV file contains this header.\\n"
-					+ "FOR JSON file : all fields in the JSON are candidate to udate")
-			.addValidator(new StandardValidators.StringLengthValidator(0, 512)).required(false).build();
+	public static final PropertyDescriptor FIELD_LIST_INSERT = new PropertyDescriptor.Builder()
+			.name("File containing the complete list of fields involved in data INSERTION")
+			.description("The file have to contain the columns list to INSERT in the featureTable.\\n"
+					+ "FOR CSV file : If this field is empty, the processor will use the header of the CSV file.\\n"
+					+ "FOR JSON file : If this field is empty, all fields present in the JSON file are candidate")
+			.addValidator(StandardValidators.FILE_EXISTS_VALIDATOR).required(false).build();
+
+	public static final PropertyDescriptor FIELD_LIST_UPDATE = new PropertyDescriptor.Builder()
+			.name("File containing the complete list of fields involved in data EDITION")
+			.description("The file have to contain the columns list to EDIT in the featureTable.\\n"
+					+ "FOR CSV file : If this field is empty, the processor will use the header of the CSV file.\\n"
+					+ "FOR JSON file : If this field is empty, all fields present in the JSON file are candidate for edition")
+			.addValidator(StandardValidators.FILE_EXISTS_VALIDATOR).required(false).build();
 
 	public static final Relationship SUCCESS = new Relationship.Builder().name("SUCCESS")
 			.description("Success relationship").build();
@@ -137,7 +148,8 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(SPATIAL_REFERENCE);
 		descriptors.add(QUOTITY);
 		descriptors.add(CHARACTER_SET_IN);
-		descriptors.add(FIELD_LIST);
+		descriptors.add(FIELD_LIST_INSERT);
+		descriptors.add(FIELD_LIST_UPDATE);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -165,14 +177,14 @@ public class PutArcGIS extends AbstractProcessor {
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
 		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
-		final String fieldList = context.getProperty(FIELD_LIST).getValue();
+		final String fieldListInsert = context.getProperty(FIELD_LIST_INSERT).getValue();
 
 		final AtomicReference<Map<Integer, List<String>>> ref_dataParsed = new AtomicReference<Map<Integer, List<String>>>();
 		ref_dataParsed.set(new HashMap<Integer, List<String>>());
 
 		try {
-			if ((fieldList != null) && (fieldList.length() > 0)) {
-				InputStream is = IOUtils.toInputStream(fieldList, "UTF-8");
+			if ((fieldListInsert != null) && (fieldListInsert.length() > 0)) {
+				final InputStream is = new FileInputStream(new File(fieldListInsert));
 				parseCSVStream(is, charSetName, ref_dataParsed);
 			}
 			
@@ -225,17 +237,19 @@ public class PutArcGIS extends AbstractProcessor {
 	private void handleCSVFlow(final ProcessContext context, final ProcessSession session,
 			final AtomicReference<Map<Integer, List<String>>> ref_dataParsed) throws ProcessException {
 
+		
 		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
 
-		ref_dataParsed.set(new HashMap<Integer, List<String>>());
 		final FlowFile flowFile = session.get();
 		if (flowFile == null) {
 			return;
 		}
 
 		Map<String, String> data = flowFile.getAttributes();
-		data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
-
+		if (getLogger().isDebugEnabled()) {
+			data.keySet().forEach(key -> getLogger().debug(key + " " + data.get(key)));
+		}
+		
 		session.read(flowFile, (InputStream inputStream) -> {
 			try {
 				parseCSVStream(inputStream, charSetName, ref_dataParsed);
