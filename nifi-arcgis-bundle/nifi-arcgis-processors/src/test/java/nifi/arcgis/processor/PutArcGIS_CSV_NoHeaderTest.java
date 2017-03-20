@@ -42,18 +42,19 @@ public class PutArcGIS_CSV_NoHeaderTest {
         testRunner.setProperty(PutArcGIS.TYPE_OF_FILE, "CSV");
         testRunner.setProperty(PutArcGIS.ARCGIS_SERVICE, "arcgis-service");
         testRunner.setProperty(PutArcGIS.QUOTITY, "100");
-		
+ 		
         MockControllerService service = new MockControllerService();
         testRunner.addControllerService("arcgis-service", service);
         testRunner.enableControllerService(service);
         
-        testRunner.run();
     }
 
     @Test
     public void testProcessorSimpleCSV_test_HEADERFAILED() throws Exception {
     	
-    	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
+        testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");
+        
+        testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
 
     	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris_header_KO.csv");
     
@@ -74,6 +75,7 @@ public class PutArcGIS_CSV_NoHeaderTest {
     public void testProcessorSimpleCSV_test_HEADERPASSED() throws Exception {
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
+        testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ok");
     	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
     
     	// Add the content to the runner
@@ -93,7 +95,8 @@ public class PutArcGIS_CSV_NoHeaderTest {
     	
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
 
-    	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris_header_KO.csv");
+        testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");
+        final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Paris_header_KO.csv");
     
     	// Add the content to the runner
     	testRunner.enqueue(content);

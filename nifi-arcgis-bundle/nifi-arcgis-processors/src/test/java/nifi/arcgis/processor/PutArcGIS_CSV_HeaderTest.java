@@ -51,8 +51,6 @@ public class PutArcGIS_CSV_HeaderTest {
         MockControllerService service = new MockControllerService();
         testRunner.addControllerService("arcgis-service", service);
         testRunner.enableControllerService(service);
-        
-        testRunner.run();
     }
 
     @Test
