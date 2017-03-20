@@ -31,6 +31,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import junit.framework.AssertionFailedError;
+import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
+
 import static org.junit.Assert.assertEquals;
 
 public class PutArcGIS_CSV_HeaderTest {
@@ -59,6 +61,8 @@ public class PutArcGIS_CSV_HeaderTest {
     	testRunner.getLogger().debug(this.getClass().getClassLoader().getResource(".").getFile());
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");
 
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
+
         // the ProcessorService is supposed to validate the column lists
         // We mock this behavior in this MockControllerService
         testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
@@ -86,6 +90,7 @@ public class PutArcGIS_CSV_HeaderTest {
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource("./header-ok").getFile());
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
 
         final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
         

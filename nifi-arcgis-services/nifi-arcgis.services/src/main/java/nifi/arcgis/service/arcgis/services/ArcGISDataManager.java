@@ -555,7 +555,7 @@ public class ArcGISDataManager {
 	public Geometry createPoint(Map<String, String> records, Map<String, Object> settings) throws Exception {
 
 		if (!((records.containsKey("x") && records.containsKey("y"))
-				|| (records.containsKey("lattitude") && records.containsKey("longitude")))) {
+				|| (records.containsKey("latitude") && records.containsKey("longitude")))) {
 			throw new Exception("Cannot create a point based on the received data");
 		}
 
@@ -570,8 +570,8 @@ public class ArcGISDataManager {
 			}
 			return (spatialReference == null) ? new Point(x, y) : new Point(x, y, spatialReference);
 		}
-		if (records.containsKey("longitude") && records.containsKey("lattitude")) {
-			double lattitude = Double.parseDouble(records.get("lattitude"));
+		if (records.containsKey("longitude") && records.containsKey("latitude")) {
+			double lattitude = Double.parseDouble(records.get("latitude"));
 			double longitude = Double.parseDouble(records.get("longitude"));
 			return (spatialReference == null) ? new Point(lattitude, longitude)
 					: new Point(lattitude, longitude, spatialReference);

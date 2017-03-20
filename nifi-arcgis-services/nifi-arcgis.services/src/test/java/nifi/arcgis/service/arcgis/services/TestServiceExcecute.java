@@ -81,13 +81,13 @@ public class TestServiceExcecute {
         // Rouen;49.433333;1.083333
         final Map<String, String> record = new HashMap<String, String>();
         record.put("name", "city-test");
-        record.put("lattitude", "50.00");
+        record.put("latitude", "50.00");
         record.put("longitude", "50.00");
         final List<Map<String, String>> records = new ArrayList<Map<String, String>>();
         records.add(record);
         final Map<String, String> record2 = new HashMap<String, String>();
         record2.put("name", "city-2");
-        record2.put("lattitude", "-3.333333");
+        record2.put("latitude", "-3.333333");
         record2.put("longitude", "48.766667");
         records.add(record2);
 

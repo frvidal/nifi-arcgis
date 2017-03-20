@@ -26,6 +26,8 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
+import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
+
 import static org.junit.Assert.assertEquals;
 
 public class PutArcGIS_CSV_NoHeaderTest {
@@ -52,6 +54,7 @@ public class PutArcGIS_CSV_NoHeaderTest {
     @Test
     public void testProcessorSimpleCSV_test_HEADERFAILED() throws Exception {
     	
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");
         
         testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
@@ -75,6 +78,7 @@ public class PutArcGIS_CSV_NoHeaderTest {
     public void testProcessorSimpleCSV_test_HEADERPASSED() throws Exception {
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(true);
     	
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ok");
     	final InputStream content = new FileInputStream("./target/test-classes/test_simple_une_ligne_Rouen_header_OK.csv");
     
@@ -93,6 +97,7 @@ public class PutArcGIS_CSV_NoHeaderTest {
     @Test
     public void testProcessor_conversion() throws Exception {
     	
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
     	testRunner.getControllerService("arcgis-service", MockControllerService.class).setHeaderValid(false);
 
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ko");

@@ -19,6 +19,10 @@ package nifi.arcgis.processor;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -108,6 +112,10 @@ public class PutArcGIS extends AbstractProcessor {
 			.description("Character Set IN").defaultValue(DEFAULT_CHARACTER_SET)
 			.addValidator(StandardValidators.CHARACTER_SET_VALIDATOR).required(true).build();
 
+	public static final PropertyDescriptor TYPE_OF_DATA_OPERATION = new PropertyDescriptor.Builder()
+			.name(OPERATION).description("Data operation to be done on the ArcGIS server")
+			.allowableValues(OPERATION_INSERT, OPERATION_UPDATE, OPERATION_UPDATE_OR_INSERT).required(true).build();
+
 	public static final PropertyDescriptor FIELD_LIST_INSERT = new PropertyDescriptor.Builder()
 			.name("File containing the complete list of fields involved in data INSERTION")
 			.description("The file have to contain the columns list to INSERT in the featureTable")
@@ -169,6 +177,7 @@ public class PutArcGIS extends AbstractProcessor {
 		descriptors.add(SPATIAL_REFERENCE);
 		descriptors.add(QUOTITY);
 		descriptors.add(CHARACTER_SET_IN);
+		descriptors.add(TYPE_OF_DATA_OPERATION);
 		descriptors.add(FIELD_LIST_INSERT);
 		descriptors.add(FIELD_LIST_UPDATE);
 		this.descriptors = Collections.unmodifiableList(descriptors);
@@ -331,7 +340,11 @@ public class PutArcGIS extends AbstractProcessor {
 		if (spatialReference != null && spatialReference.length() > 0) {
 			settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
 		}
+		final String dataOperation = context.getProperty(TYPE_OF_DATA_OPERATION).getValue();
+		getLogger().debug(ArcGISLayerServiceAPI.OPERATION + " = " + dataOperation);
+		settings.put(ArcGISLayerServiceAPI.OPERATION, dataOperation);
 
+		
 		int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
 		final int nb_total_records = ref_dataParsed.get().size();
 		getLogger().debug(
@@ -405,11 +418,17 @@ public class PutArcGIS extends AbstractProcessor {
 		StringBuilder sb;
 
 		while ((sb = FileManager.readLine(reader)) != null) {
-			getLogger().debug("parsing the CSV line " + sb.toString());
-			List<String> value = CsvManager.parseLine(sb.toString(), ';');
-			Map<String, String> record = new HashMap<String, String>();
-			fields.forEach(fieldName->record.put(fieldName, value.remove(0)));
-			ref_dataParsed.get().add(record);
+			if (sb.length() > 0) {
+				getLogger().debug("parsing the CSV line " + sb.toString());
+				List<String> values = CsvManager.parseLine(sb.toString(), ';');
+				Map<String, String> record = new HashMap<String, String>();
+				if (getLogger().isDebugEnabled()) {
+					fields.forEach(fieldName->getLogger().debug(fieldName + " "));				
+					values.forEach(value->getLogger().debug(value + " "));				
+				}
+				fields.forEach(fieldName->record.put(fieldName, values.remove(0)));
+				ref_dataParsed.get().add(record);
+			}
 		}
 	}
 

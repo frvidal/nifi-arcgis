@@ -235,13 +235,10 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 	@Override
 	public void execute( List<Map<String, String>> records, final Map<String,Object> settings) throws ProcessException {
 		inExecution = true;
-		if (getLogger().isDebugEnabled()) {
-			getLogger().debug (Thread.currentThread().getId() + " is processing the data updates");	
-		}
-		
+
 		try {
 			if (!settings.containsKey(OPERATION)) {
-				throw new Exception("Mandary type of operation is not filled");
+				throw new Exception("Mandary type of operation is not filled + (key="+OPERATION+")");
 			}
 			
 			if (OPERATION_INSERT.equals(settings.get(OPERATION))) {

@@ -93,7 +93,7 @@ public class TestCreateGeometry {
 	@Test
 	public void testCreationIncompleteData_lattitude_longitude_ok() {
 		records.put("n/a", "test");
-		records.put("lattitude", "1");
+		records.put("latitude", "1");
 		records.put("longitude", "2");
 		try {
 			dataManager.createPoint(records, settings);

@@ -34,10 +34,10 @@ public interface ArcGISLayerServiceAPI extends ControllerService {
 	public final static String SPATIAL_REFERENCE_WEBMERCATOR = "WebMercator";
 
 	// Type of operation executed on the ArcGIS server
-	public final static String OPERATION = "OPE";
-	public final static String OPERATION_INSERT = "I";
-	public final static String OPERATION_UPDATE = "U";
-	public final static String OPERATION_UPDATE_OR_INSERT = "U|I";
+	public final static String OPERATION = "Type operation";
+	public final static String OPERATION_INSERT = "ADD";
+	public final static String OPERATION_UPDATE = "EDIT";
+	public final static String OPERATION_UPDATE_OR_INSERT = "ADD OR EDIT";
 	
 	public final static String TYPE_OF_QUERY = "QUERY";
 	public final static String TYPE_OF_QUERY_GEO = "GEO";
