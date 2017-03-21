@@ -58,7 +58,7 @@ public class TestServiceExcecute {
     }
 
     @Test
-    public void test_executeService() throws Exception {
+    public void test_executeService_OPERATION_INSERT() throws Exception {
 
     	// test offline
     	if (testOffline) return;
@@ -108,6 +108,58 @@ public class TestServiceExcecute {
         cleanupDB();
     }
 
+    @Test
+    public void test_executeService_OPERATION_UPDATE_OR_INSERT() throws Exception {
+
+    	// test offline
+    	if (testOffline) return;
+    	
+        cleanupDB();
+
+        ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, "http://localhost:6080");
+        assertTrue (vr.isValid());
+ 
+        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "city");
+        assertTrue (vr.isValid());
+ 
+        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "geo_db.sde.CITY");
+        assertTrue (vr.isValid());
+ 
+        runner.enableControllerService(service);
+        runner.assertNotValid(service);
+        
+        final Map<String, String> record = new HashMap<String, String>();
+        record.put("name", "Paris");
+        record.put("latitude", "48.8534100");
+        record.put("longitude", "2.3488000");
+        record.put("hit","1");
+        final List<Map<String, String>> records = new ArrayList<Map<String, String>>();
+        records.add(record);
+
+        Map<String, Object> settings = new HashMap<String, Object>();
+        
+        settings.put(ArcGISLayerServiceAPI.SPATIAL_REFERENCE, ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84);
+        settings.put(ArcGISLayerServiceAPI.OPERATION, ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT);
+        settings.put(ArcGISLayerServiceAPI.TYPE_OF_QUERY, ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO);
+        settings.put(ArcGISLayerServiceAPI.RADIUS, 1000);
+        List<String> listFieldsUpdate = new ArrayList<String>();
+        listFieldsUpdate.add("hit");
+        listFieldsUpdate.add("name");
+        settings.put(ArcGISLayerServiceAPI.UPDATE_FIELD_LIST, listFieldsUpdate);
+        
+        ArcGISDataManager dataManager = new ArcGISDataManager(runner.getLogger());
+        vr = dataManager.checkConnection("http://localhost:6080", null, "city", "geo_db.sde.CITY");
+        assertTrue (vr.isValid());
+        service.setArcGISDataManager(dataManager);
+        service.execute(records, settings);
+        
+        dataManager.reinitializeFeatureTable();
+        Feature feature = dataManager.geoQuery(record, settings);
+        assertEquals("Paris", feature.getAttributes().get("name"));
+        
+        cleanupDB();
+    }
+    
     private void cleanupDB() throws Exception {
     	
     	Class.forName("org.postgresql.Driver");

@@ -3,10 +3,13 @@ package nifi.arcgis.service.arcgis.services;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
 
 import static com.jayway.awaitility.Awaitility.await;
 
@@ -21,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.components.ValidationResult;
@@ -30,6 +34,7 @@ import com.esri.arcgisruntime.concurrent.ListenableFuture;
 import com.esri.arcgisruntime.data.Feature;
 import com.esri.arcgisruntime.data.FeatureEditResult;
 import com.esri.arcgisruntime.data.FeatureQueryResult;
+import com.esri.arcgisruntime.data.FeatureTable;
 import com.esri.arcgisruntime.data.Field;
 import com.esri.arcgisruntime.data.QueryParameters;
 import com.esri.arcgisruntime.data.QueryParameters.SpatialRelationship;
@@ -102,10 +107,11 @@ public class ArcGISDataManager {
 	private ServiceFeatureTable featureTable = null;
 
 	/*
-	 * Default radius for the search mechanism. This value is supposed to be overrided with the passed setting  
+	 * Default radius for the search mechanism. This value is supposed to be
+	 * overrided with the passed setting
 	 */
 	private final int DEFAULT_RADIUS = 1000;
-	
+
 	/*
 	 * Check ArcGIS server connection with the current parameters.
 	 * 
@@ -228,8 +234,9 @@ public class ArcGISDataManager {
 
 		await().untilTrue(dataOperationTerminated);
 
-//TODO INTERUPT EXCEPTION HAS TO BE HANDLE 
-// 		return builder.input(currentRestResource).explanation(e.getMessage()).valid(false).subject(currentSubject).build();
+		// TODO INTERUPT EXCEPTION HAS TO BE HANDLE
+		// return
+		// builder.input(currentRestResource).explanation(e.getMessage()).valid(false).subject(currentSubject).build();
 
 		return builder.build();
 
@@ -316,28 +323,82 @@ public class ArcGISDataManager {
 		for (Map<String, String> record : records) {
 
 			Feature feature = null;
-			if (TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY_GEO))) {
+			if (TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY))) {
 				feature = geoQuery(record, settings);
 			}
 			if (feature == null) {
-				if (OPERATION_UPDATE.equals(OPERATION)) {
-					throw new Exception ("Cannot update this data. Record does not exist on the target featureTable");
+
+				if (OPERATION_UPDATE.equals(settings.get(OPERATION))) {
+					throw new Exception("Cannot update this data. Record does not exist on the target featureTable");
 				}
-				
+
 				// We add one single record
-				// This is not the most effective way to handle this insertion 
-				if (OPERATION_UPDATE_OR_INSERT.equals(OPERATION)) {
+				// This is not the most effective way to handle this use case
+				if (OPERATION_UPDATE_OR_INSERT.equals(settings.get(OPERATION))) {
 					List<Map<String, String>> singleRecordToAdd = new ArrayList<Map<String, String>>();
 					singleRecordToAdd.add(record);
 					insertData(singleRecordToAdd, settings);
+					reinitializeFeatureTable();
 					feature = geoQuery(record, settings);
 				}
-			}	
+			} 
 			
+			Map<String, Object> attributes = feature.getAttributes();
+			List<String> fieldsToUpdate = (List<String>) settings.get(UPDATE_FIELD_LIST);
+			fieldsToUpdate.forEach(fieldToUpdate -> {
+				if (logger.isDebugEnabled()) {
+					logger.debug(fieldToUpdate + " in db:" + attributes.get(fieldToUpdate) + " param:"+record.get(fieldToUpdate));
+				}
+				Object data = null;
+				if (record.get(fieldToUpdate) != null) {
+					try {
+						data = getDataColumn(fieldToUpdate, record.get(fieldToUpdate));
+					} catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+					if (logger.isDebugEnabled()) {
+						logger.debug("data " + data.getClass());
+					}
+				}
+//				attributes.computeIfPresent(key, remappingFunction)
+			});
 			
 		}
 	}
 
+	/**
+	 * Add the passed numeric in the record to the numeric stored into the database
+	 * <br/>We try to produce something like <code>set A = A + :1</code>
+	 */
+	BiFunction<Integer, Integer, Integer> add = (x, y) -> {      
+	      return x + y;
+	};
+
+	/**
+	 * Subtract the passed numeric in the record to the numeric stored into the database
+	 * <br/>We try to produce something like <code>set A = A -:1</code>
+	 */
+	BiFunction<Integer, Integer, Integer> Subtract = (x, y) -> {      
+	      return x - y;
+	};
+
+	/**
+	 * Reinitialize the featureLayer.
+	 * <br/>This re-initialization is executed to prevent the call
+	 * <br/><code>FeatureLayer featureLayer = new FeatureLayer(featureTable);</code> 
+	 * <br/>from the error message <b>"data_source is already owned."</b>
+	 * <br/><i>This method is public in order to be invoked from Unit test</i>
+	 */
+	public void reinitializeFeatureTable() {
+		final AtomicBoolean reloadDone = new AtomicBoolean(false);
+		String uri = featureTable.getUri();
+		featureTable = new ServiceFeatureTable(uri);
+		featureTable.loadAsync();
+		featureTable.addDoneLoadingListener(() -> reloadDone.set(true));
+		await().untilTrue(reloadDone);
+	}
+	
+	
 	/**
 	 * Select a record in the featureTable in a circle around a latitude and a
 	 * longitude.
@@ -358,18 +419,16 @@ public class ArcGISDataManager {
 			geometry = createPoint(record, settings);
 		}
 		logger.debug(geometry.toJson());
-		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS)) 
-				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS)
-				: DEFAULT_RADIUS;
-			
-		
+		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
+				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS) : DEFAULT_RADIUS;
+
 		Polygon searchAround = GeometryEngine.buffer(geometry, radius);
 
 		QueryParameters queryParams = new QueryParameters();
 		queryParams.setGeometry(searchAround);
 		queryParams.setOutSpatialReference(spatialReference);
 		queryParams.setSpatialRelationship(SpatialRelationship.INTERSECTS);
-
+		
 		final FeatureLayer featureLayer = new FeatureLayer(featureTable);
 
 		final ListenableFuture<FeatureQueryResult> future = featureLayer.selectFeaturesAsync(queryParams,
@@ -377,8 +436,9 @@ public class ArcGISDataManager {
 
 		// Selected feature returned by this function
 		final AtomicReference<Feature> selectedFeature = new AtomicReference<Feature>();
-		
-		// The purpose of queryDone is to wait for query completion before returning the result
+
+		// The purpose of queryDone is to wait for query completion before
+		// returning the result
 		AtomicBoolean queryDone = new AtomicBoolean(false);
 		future.addDoneListener(() -> {
 			FeatureQueryResult result;
@@ -388,17 +448,18 @@ public class ArcGISDataManager {
 				ArcGISDataManager.this.logger.error(ExceptionUtils.getStackTrace(e));
 				throw new RuntimeException(e);
 			}
-			
+
 			final AtomicReference<Double> closestDistance = new AtomicReference<Double>(new Double(Double.MAX_VALUE));
 			result.forEach(feature -> {
 				double distance = GeometryEngine.distanceBetween(searchAround, feature.getGeometry());
-				if ( distance < closestDistance.get() ) {
+				if (distance < closestDistance.get()) {
 					selectedFeature.set(feature);
 					closestDistance.set(distance);
 					ComponentLog logger = ArcGISDataManager.this.logger;
-					if ( logger.isDebugEnabled()) {
+					if (logger.isDebugEnabled()) {
 						Map<String, Object> attributes = selectedFeature.get().getAttributes();
-						logger.debug("Feature select " + attributes.get("name") + " @ the distance " + closestDistance.get());
+						logger.debug("Feature select " + attributes.get("name") + " @ the distance "
+								+ closestDistance.get());
 					}
 				}
 			});
@@ -453,7 +514,12 @@ public class ArcGISDataManager {
 				try {
 					res.get();
 					if (res.isDone()) {
-						featureTable.applyEditsAsync().addDoneListener(() -> applyEdits(featureTable));
+						final AtomicBoolean dataEditionTerminated = new AtomicBoolean(false);						
+						featureTable.applyEditsAsync().addDoneListener(() -> {
+							applyEdits(featureTable);
+							dataEditionTerminated.set(true);
+						});
+						await().untilTrue(dataEditionTerminated);
 					}
 				} catch (Exception e) {
 					ArcGISDataManager.this.logger
@@ -464,8 +530,8 @@ public class ArcGISDataManager {
 				}
 
 			});
-
 			await().untilTrue(dataOperationTerminated);
+			logger.debug("dataOperationTerminated");
 
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
@@ -484,7 +550,7 @@ public class ArcGISDataManager {
 	 *             : exception occurs during the data parsing.
 	 *             NumberFormatException might be thrown.
 	 */
-	private Object getDataColumn(String field, String value) throws Exception {
+	Object getDataColumn(String field, String value) throws Exception {
 		Object o = null;
 		if (associateFields.containsKey(field)) {
 			switch (associateFields.get(field).type) {
@@ -513,7 +579,7 @@ public class ArcGISDataManager {
 	private void applyEdits(ServiceFeatureTable featureTable) {
 
 		final AtomicBoolean editionApplied = new AtomicBoolean(false);
-		
+
 		// apply the changes to the server
 		ListenableFuture<List<FeatureEditResult>> editResult = featureTable.applyEditsAsync();
 		editResult.addDoneListener(() -> {
@@ -532,9 +598,9 @@ public class ArcGISDataManager {
 			editionApplied.set(true);
 		});
 
-		//TODO InterruptedException has to be handled
+		// TODO InterruptedException has to be handled
 		await().untilTrue(editionApplied);
-		
+
 	}
 
 	/**
