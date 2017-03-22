@@ -344,10 +344,11 @@ public class ArcGISDataManager {
 			} 
 			
 			Map<String, Object> attributes = feature.getAttributes();
+			RecordAttributeDataOperation recordOperation = new RecordAttributeDataOperation(record);
 			List<String> fieldsToUpdate = (List<String>) settings.get(UPDATE_FIELD_LIST);
 			fieldsToUpdate.forEach(fieldToUpdate -> {
 				if (logger.isDebugEnabled()) {
-					logger.debug(fieldToUpdate + " in db:" + attributes.get(fieldToUpdate) + " param:"+record.get(fieldToUpdate));
+					logger.debug(fieldToUpdate + " in db:" + attributes.get(fieldToUpdate) + " param:" + record.get(fieldToUpdate));
 				}
 				Object data = null;
 				if (record.get(fieldToUpdate) != null) {
@@ -356,31 +357,66 @@ public class ArcGISDataManager {
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
+					final BiFunction<String, ? super Object, ? extends Object> dataOperation = 
+							getBiFunction(fieldToUpdate, recordOperation, data);
 					if (logger.isDebugEnabled()) {
-						logger.debug("data " + data.getClass());
+						logger.debug("data " + data.getClass() + ", associated operation " + dataOperation);
 					}
+					attributes.computeIfPresent(fieldToUpdate, dataOperation);
 				}
-//				attributes.computeIfPresent(key, remappingFunction)
 			});
-			
+			ListenableFuture<Void> editResult = featureTable.updateFeatureAsync(feature);
+		    editResult.addDoneListener(() -> applyEdits(featureTable));
 		}
 	}
 
 	/**
-	 * Add the passed numeric in the record to the numeric stored into the database
-	 * <br/>We try to produce something like <code>set A = A + :1</code>
+	 * For Numeric field only, this function returns the operation to be executed with the previous and next data value.
+	 * @param fieldToUpdate field name to update in the featureTable
+	 * @param dataOperation the single unite data operation manager
+	 * @param dataValueToUpdate data for update
 	 */
-	BiFunction<Integer, Integer, Integer> add = (x, y) -> {      
-	      return x + y;
-	};
+	static BiFunction<String,? super Object,? extends Object> getBiFunction(final String fieldToUpdate, RecordAttributeDataOperation dataOperation, final Object dataValueToUpdate) {
 
-	/**
-	 * Subtract the passed numeric in the record to the numeric stored into the database
-	 * <br/>We try to produce something like <code>set A = A -:1</code>
-	 */
-	BiFunction<Integer, Integer, Integer> Subtract = (x, y) -> {      
-	      return x - y;
-	};
+		if (dataValueToUpdate instanceof String) {
+			return dataOperation.setString;
+		}
+		
+		char operator = fieldToUpdate.charAt(0);
+		// The is no operator. This is just an affectation
+		if ("+-".indexOf(operator) == -1) {
+			if (dataValueToUpdate instanceof Integer) {
+				return dataOperation.setInteger;
+			} 
+			if (dataValueToUpdate instanceof Double) {
+				return dataOperation.setDouble;
+			}
+			throw new RuntimeException(dataValueToUpdate.getClass().getName() + " is not implemented yet!");
+		}
+		
+		if (operator == '+') {
+			if (dataValueToUpdate instanceof Integer) {
+				return dataOperation.addInteger;
+			} 
+			if (dataValueToUpdate instanceof Double) {
+				return dataOperation.addDouble;
+			}
+			throw new RuntimeException(dataValueToUpdate.getClass().getName() + " is not implemented yet!");
+		}
+		
+		if (operator == '-') {
+			if (dataValueToUpdate instanceof Integer) {
+				return dataOperation.subtractInteger;
+			} 
+			if (dataValueToUpdate instanceof Double) {
+				return dataOperation.subtractDouble;
+			}
+			throw new RuntimeException(dataValueToUpdate.getClass().getName() + " is not implemented yet!");
+		}
+
+		throw new RuntimeException("WTF : Should not pass here");
+	}
+	
 
 	/**
 	 * Reinitialize the featureLayer.
