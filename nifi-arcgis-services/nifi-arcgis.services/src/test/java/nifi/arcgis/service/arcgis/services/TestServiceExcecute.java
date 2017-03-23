@@ -68,7 +68,7 @@ public class TestServiceExcecute {
         ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, "http://localhost:6080");
         assertTrue (vr.isValid());
  
-        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "MyMapService");
+        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "city");
         assertTrue (vr.isValid());
  
         vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "geo_db.sde.CITY");
@@ -156,7 +156,8 @@ public class TestServiceExcecute {
         dataManager.reinitializeFeatureTable();
         Feature feature = dataManager.geoQuery(record, settings);
         assertEquals("Paris", feature.getAttributes().get("name"));
-        
+        assertEquals(new Integer(1), feature.getAttributes().get("hit"));
+                
         cleanupDB();
     }
     

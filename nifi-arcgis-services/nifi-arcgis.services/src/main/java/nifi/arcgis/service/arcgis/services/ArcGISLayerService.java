@@ -234,6 +234,7 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 
 	@Override
 	public void execute( List<Map<String, String>> records, final Map<String,Object> settings) throws ProcessException {
+		
 		inExecution = true;
 
 		try {
@@ -252,7 +253,8 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 			}
 		} catch (Exception e) {
 			getLogger().error(ExceptionUtils.getStackTrace(e));
-			throw new ProcessException(e.getMessage());
+			getLogger().error(e.getLocalizedMessage());
+			throw new ProcessException(e);
 		} finally {
 			inExecution = false;
 		}

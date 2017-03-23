@@ -31,6 +31,7 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.logging.ComponentLog;
 
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
+import com.esri.arcgisruntime.data.ArcGISFeature;
 import com.esri.arcgisruntime.data.Feature;
 import com.esri.arcgisruntime.data.FeatureEditResult;
 import com.esri.arcgisruntime.data.FeatureQueryResult;
@@ -320,12 +321,13 @@ public class ArcGISDataManager {
 	public void updateData(final List<Map<String, String>> records, final Map<String, Object> settings)
 			throws Exception {
 
+		if (!TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY))) {
+			throw new RuntimeException("WTF : Type of query unknown " + settings.get(TYPE_OF_QUERY));
+		}
 		for (Map<String, String> record : records) {
 
-			Feature feature = null;
-			if (TYPE_OF_QUERY_GEO.equals(settings.get(TYPE_OF_QUERY))) {
-				feature = geoQuery(record, settings);
-			}
+			
+			ArcGISFeature feature = geoQuery(record, settings);
 			if (feature == null) {
 
 				if (OPERATION_UPDATE.equals(settings.get(OPERATION))) {
@@ -344,6 +346,7 @@ public class ArcGISDataManager {
 			} 
 			
 			Map<String, Object> attributes = feature.getAttributes();
+			
 			RecordAttributeDataOperation recordOperation = new RecordAttributeDataOperation(record);
 			List<String> fieldsToUpdate = (List<String>) settings.get(UPDATE_FIELD_LIST);
 			fieldsToUpdate.forEach(fieldToUpdate -> {
@@ -362,7 +365,12 @@ public class ArcGISDataManager {
 					if (logger.isDebugEnabled()) {
 						logger.debug("data " + data.getClass() + ", associated operation " + dataOperation);
 					}
-					attributes.computeIfPresent(fieldToUpdate, dataOperation);
+					if (attributes.get(fieldToUpdate) != null) {
+						attributes.computeIfPresent(fieldToUpdate, dataOperation);
+					} else {
+						attributes.put(fieldToUpdate, data);
+						System.out.println(data);
+					}
 				}
 			});
 			ListenableFuture<Void> editResult = featureTable.updateFeatureAsync(feature);
@@ -430,7 +438,7 @@ public class ArcGISDataManager {
 		String uri = featureTable.getUri();
 		featureTable = new ServiceFeatureTable(uri);
 		featureTable.loadAsync();
-		featureTable.addDoneLoadingListener(() -> reloadDone.set(true));
+		featureTable.addDoneLoadingListener(() ->reloadDone.set(true));
 		await().untilTrue(reloadDone);
 	}
 	
@@ -443,10 +451,10 @@ public class ArcGISDataManager {
 	 *            actual record for processing
 	 * @param settings
 	 *            current settings of data management
-	 * @return the selected featureLayer
+	 * @return the selected feature
 	 * @throws Exception
 	 */
-	Feature geoQuery(Map<String, String> record, final Map<String, Object> settings) throws Exception {
+	ArcGISFeature geoQuery(Map<String, String> record, final Map<String, Object> settings) throws Exception {
 
 		SpatialReference spatialReference = getSpatialReference(settings);
 
@@ -454,7 +462,7 @@ public class ArcGISDataManager {
 		if (featureTable.getGeometryType().equals(GeometryType.POINT)) {
 			geometry = createPoint(record, settings);
 		}
-		logger.debug(geometry.toJson());
+
 		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
 				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS) : DEFAULT_RADIUS;
 
@@ -471,7 +479,7 @@ public class ArcGISDataManager {
 				SelectionMode.NEW);
 
 		// Selected feature returned by this function
-		final AtomicReference<Feature> selectedFeature = new AtomicReference<Feature>();
+		final AtomicReference<ArcGISFeature> selectedFeature = new AtomicReference<ArcGISFeature>();
 
 		// The purpose of queryDone is to wait for query completion before
 		// returning the result
@@ -486,10 +494,10 @@ public class ArcGISDataManager {
 			}
 
 			final AtomicReference<Double> closestDistance = new AtomicReference<Double>(new Double(Double.MAX_VALUE));
-			result.forEach(feature -> {
+			result.forEach( feature -> {
 				double distance = GeometryEngine.distanceBetween(searchAround, feature.getGeometry());
 				if (distance < closestDistance.get()) {
-					selectedFeature.set(feature);
+					selectedFeature.set((ArcGISFeature) feature);
 					closestDistance.set(distance);
 					ComponentLog logger = ArcGISDataManager.this.logger;
 					if (logger.isDebugEnabled()) {
@@ -502,6 +510,14 @@ public class ArcGISDataManager {
 			queryDone.set(true);
 		});
 		await().untilTrue(queryDone);
+
+		if (selectedFeature.get() != null) {
+			queryDone.set(false);
+			selectedFeature.get().loadAsync();
+			selectedFeature.get().addDoneLoadingListener(() -> queryDone.set(true));
+			await().untilTrue(queryDone);
+		}
+		
 		return selectedFeature.get();
 	}
 
