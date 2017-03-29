@@ -115,7 +115,7 @@ public class TestServiceExcecute {
     	if (testOffline) return;
     	
         cleanupDB();
-
+        
         ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, "http://localhost:6080");
         assertTrue (vr.isValid());
  
@@ -143,7 +143,7 @@ public class TestServiceExcecute {
         settings.put(ArcGISLayerServiceAPI.TYPE_OF_QUERY, ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO);
         settings.put(ArcGISLayerServiceAPI.RADIUS, 1000);
         List<String> listFieldsUpdate = new ArrayList<String>();
-        listFieldsUpdate.add("hit");
+        listFieldsUpdate.add("+hit");
         listFieldsUpdate.add("name");
         settings.put(ArcGISLayerServiceAPI.UPDATE_FIELD_LIST, listFieldsUpdate);
         
@@ -153,12 +153,19 @@ public class TestServiceExcecute {
         service.setArcGISDataManager(dataManager);
         service.execute(records, settings);
         
-        dataManager.reinitializeFeatureTable();
+//        dataManager.reinitializeFeatureTable();
         Feature feature = dataManager.geoQuery(record, settings);
         assertEquals("Paris", feature.getAttributes().get("name"));
         assertEquals(new Integer(1), feature.getAttributes().get("hit"));
-                
+  
+        /*              
+        service.execute(records, settings);
+        assertEquals("Paris", feature.getAttributes().get("name"));
+        assertEquals(new Integer(2), feature.getAttributes().get("hit"));
+        
+        
         cleanupDB();
+        */
     }
     
     private void cleanupDB() throws Exception {
@@ -171,5 +178,79 @@ public class TestServiceExcecute {
     	connection.close();
     	
     }
+
+	@Test
+	    public void test_executeService_OPERATION_UPDATE_OR_INSERT_2() throws Exception {
+	
+	    	// test offline
+	    	if (testOffline) return;
+	    	
+	        cleanupDB();
+	        
+	        ValidationResult vr = runner.setProperty(service, ArcGISLayerService.ARCGIS_URL, "http://localhost:6080");
+	        assertTrue (vr.isValid());
+	 
+	        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "city");
+	        assertTrue (vr.isValid());
+	 
+	        vr = runner.setProperty(service, ArcGISLayerService.FEATURE_SERVER, "geo_db.sde.CITY");
+	        assertTrue (vr.isValid());
+	 
+	        runner.enableControllerService(service);
+	        runner.assertNotValid(service);
+	        
+	        Map<String, String> record1 = new HashMap<String, String>();
+	        record1.put("name", "Nashville");
+	        record1.put("latitude", "36.1473");
+	        record1.put("longitude", "-86.777");
+	        record1.put("hit","1");
+	        final List<Map<String, String>> records = new ArrayList<Map<String, String>>();
+	        records.add(record1);
+	        
+	        Map<String, String> record2 = new HashMap<String, String>();
+	        record2.put("name", "Christchurch");
+	        record2.put("latitude", "-43.5333");
+	        record2.put("longitude", "172.6333");
+	        record2.put("hit","1");
+	        records.add(record2);
+	        
+	        Map<String, Object> settings = new HashMap<String, Object>();
+	        
+	        settings.put(ArcGISLayerServiceAPI.SPATIAL_REFERENCE, ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR);
+	        settings.put(ArcGISLayerServiceAPI.OPERATION, ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT);
+	        settings.put(ArcGISLayerServiceAPI.TYPE_OF_QUERY, ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO);
+	        List<String> listFieldsUpdate = new ArrayList<String>();
+	        listFieldsUpdate.add("+hit");
+	        listFieldsUpdate.add("name");
+	        settings.put(ArcGISLayerServiceAPI.UPDATE_FIELD_LIST, listFieldsUpdate);
+	        
+	        ArcGISDataManager dataManager = new ArcGISDataManager(runner.getLogger());
+	        vr = dataManager.checkConnection("http://localhost:6080", null, "city", "geo_db.sde.CITY");
+	        assertTrue (vr.isValid());
+	        service.setArcGISDataManager(dataManager);
+	        service.execute(records, settings);
+
+	        
+	        service.execute(records, settings);
+	        
+	        Feature feature = dataManager.geoQuery(record1, settings);
+	        assertEquals("Nashville", feature.getAttributes().get("name"));
+	        assertEquals(new Integer(2), feature.getAttributes().get("hit"));
+
+	        // cleanupDB();
+	        /*
+	        dataManager.reinitializeFeatureTable();
+	        Feature feature = dataManager.geoQuery(record, settings);
+	        assertEquals("Paris", feature.getAttributes().get("name"));
+	        assertEquals(new Integer(1), feature.getAttributes().get("hit"));
+	               
+	        service.execute(records, settings);
+	        assertEquals("Paris", feature.getAttributes().get("name"));
+	        assertEquals(new Integer(2), feature.getAttributes().get("hit"));
+	        
+	        
+	        cleanupDB();
+	        */
+	    }
     
 }

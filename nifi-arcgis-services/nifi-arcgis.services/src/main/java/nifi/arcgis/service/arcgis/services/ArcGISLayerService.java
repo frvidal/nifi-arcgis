@@ -238,9 +238,13 @@ public class ArcGISLayerService extends AbstractControllerService implements Arc
 		inExecution = true;
 
 		try {
+			// gisDataManager.reinitializeFeatureTable();
+
 			if (!settings.containsKey(OPERATION)) {
 				throw new Exception("Mandary type of operation is not filled + (key="+OPERATION+")");
 			}
+			
+			getLogger().debug("Executing " + settings.get(OPERATION).toString());
 			
 			if (OPERATION_INSERT.equals(settings.get(OPERATION))) {
 				gisDataManager.insertData(records, settings);

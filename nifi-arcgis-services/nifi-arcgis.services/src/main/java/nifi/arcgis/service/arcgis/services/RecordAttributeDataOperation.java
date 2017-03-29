@@ -34,14 +34,15 @@ public class RecordAttributeDataOperation {
 	 * <br/><i>We add the operator <code>+</code> which is prefixing the field name in the record map</i>
 	 * <br/>We try to produce something like <code>set A = A + :1</code>
 	 */
-	public BiFunction<String, ? super Object, Object> addInteger = (k, v) -> (Integer) v + Integer.valueOf(record.get("+"+k)) ;
+	public BiFunction<String, ? super Object, Object> addInteger = (k, v) -> (Integer) v + Integer.valueOf(record.get(k));
+	
 
 	/**
 	 * Subtract the passed numeric in the record to the numeric stored into the database
 	 * <br/><i>We add the operator <code>-</code> which is prefixing the field name in the record map</i>
 	 * <br/>We try to produce something like <code>set A = A -:1</code>
 	 */
-	public BiFunction<String, ? super Object, Object> subtractInteger = (k, v) -> (Integer) v - Integer.valueOf(record.get("-"+k));
+	public BiFunction<String, ? super Object, Object> subtractInteger = (k, v) -> (Integer) v - Integer.valueOf(record.get(k));
 
 	/**
 	 * Replace the old numeric value by the new numeric value into the database.
@@ -54,14 +55,14 @@ public class RecordAttributeDataOperation {
 	 * <br/><i>We add the operator <code>+</code> which is prefixing the field name in the record map</i>
 	 * <br/>We try to produce something like <code>set A = A + :1</code>
 	 */
-	public BiFunction<String, ? super Object, Object> addDouble = (k, v) -> (Double) v + Double.valueOf(record.get("+"+k)) ;
+	public BiFunction<String, ? super Object, Object> addDouble = (k, v) -> (Double) v + Double.valueOf(record.get(k)) ;
 
 	/**
 	 * Subtract the passed numeric in the record to the numeric stored into the database
 	 * <br/><i>We add the operator <code>-</code> which is prefixing the field name in the record map</i>
 	 * <br/>We try to produce something like <code>set A = A -:1</code>
 	 */
-	public BiFunction<String, ? super Object, Object> subtractDouble = (k, v) -> (Double) v - Double.valueOf(record.get("-"+k));
+	public BiFunction<String, ? super Object, Object> subtractDouble = (k, v) -> (Double) v - Double.valueOf(record.get(k));
 
 	/**
 	 * Replace the old numeric value by the new numeric value into the database.

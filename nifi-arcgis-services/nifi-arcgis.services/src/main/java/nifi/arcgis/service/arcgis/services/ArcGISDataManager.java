@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -50,6 +51,8 @@ import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.esri.arcgisruntime.layers.FeatureLayer;
 import com.esri.arcgisruntime.layers.FeatureLayer.SelectionMode;
 import com.esri.arcgisruntime.loadable.LoadStatus;
+import com.jayway.awaitility.Duration;
+import com.jayway.awaitility.core.ConditionTimeoutException;
 
 import nifi.arcgis.service.arcgis.services.json.ArcGISServicesData;
 import nifi.arcgis.service.arcgis.services.json.Layer;
@@ -107,11 +110,16 @@ public class ArcGISDataManager {
 	 */
 	private ServiceFeatureTable featureTable = null;
 
+	/**
+	 * Connector for managing a layer in the featureTable.
+	 */
+	private FeatureLayer featureLayer = null;
+
 	/*
 	 * Default radius for the search mechanism. This value is supposed to be
-	 * overrided with the passed setting
+	 * overridden with the passed setting
 	 */
-	private final int DEFAULT_RADIUS = 1000;
+	private final int DEFAULT_RADIUS = 10;
 
 	/*
 	 * Check ArcGIS server connection with the current parameters.
@@ -129,6 +137,11 @@ public class ArcGISDataManager {
 	 */
 	public ValidationResult checkConnection(final String arcgisURL, final String folderServer,
 			final String featureServer, final String layerName) {
+
+		// TODO Can we trust on theses 2 conditions ?
+		if ((featureLayer != null) && (featureTable != null)) {
+			return new ValidationResult.Builder().valid(true).build();
+		}
 
 		// This variable is used to verify that the data operation is terminated
 		final AtomicBoolean dataOperationTerminated = new AtomicBoolean(false);
@@ -234,6 +247,7 @@ public class ArcGISDataManager {
 		}
 
 		await().untilTrue(dataOperationTerminated);
+		featureLayer = new FeatureLayer(featureTable);
 
 		// TODO INTERUPT EXCEPTION HAS TO BE HANDLE
 		// return
@@ -326,8 +340,12 @@ public class ArcGISDataManager {
 		}
 		for (Map<String, String> record : records) {
 
-			
-			ArcGISFeature feature = geoQuery(record, settings);
+			ArcGISFeature feature;
+			try {
+				feature = geoQuery(record, settings);
+			} catch (final ConditionTimeoutException cte) {
+				feature = null;
+			}
 			if (feature == null) {
 
 				if (OPERATION_UPDATE.equals(settings.get(OPERATION))) {
@@ -340,18 +358,22 @@ public class ArcGISDataManager {
 					List<Map<String, String>> singleRecordToAdd = new ArrayList<Map<String, String>>();
 					singleRecordToAdd.add(record);
 					insertData(singleRecordToAdd, settings);
-					reinitializeFeatureTable();
-					feature = geoQuery(record, settings);
+					continue;
 				}
-			} 
-			
+			}
+
 			Map<String, Object> attributes = feature.getAttributes();
-			
+
 			RecordAttributeDataOperation recordOperation = new RecordAttributeDataOperation(record);
 			List<String> fieldsToUpdate = (List<String>) settings.get(UPDATE_FIELD_LIST);
-			fieldsToUpdate.forEach(fieldToUpdate -> {
+			if (fieldsToUpdate == null) {
+				throw new Exception ("Settings object does not provide an update fields list (Key:UPDATE_FIELD_LIST)" );
+			}
+			fieldsToUpdate.forEach(fieldToUpdateWithOperator -> {
+				String fieldToUpdate = fieldNameUndecorated(fieldToUpdateWithOperator);
 				if (logger.isDebugEnabled()) {
-					logger.debug(fieldToUpdate + " in db:" + attributes.get(fieldToUpdate) + " param:" + record.get(fieldToUpdate));
+					logger.debug(fieldToUpdateWithOperator + " in db:" + attributes.get(fieldToUpdate) + " param:"
+							+ record.get(fieldToUpdate));
 				}
 				Object data = null;
 				if (record.get(fieldToUpdate) != null) {
@@ -360,62 +382,87 @@ public class ArcGISDataManager {
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
-					final BiFunction<String, ? super Object, ? extends Object> dataOperation = 
-							getBiFunction(fieldToUpdate, recordOperation, data);
+					final BiFunction<String, ? super Object, ? extends Object> dataOperation = getBiFunction(
+							fieldToUpdateWithOperator, recordOperation, data);
 					if (logger.isDebugEnabled()) {
-						logger.debug("data " + data.getClass() + ", associated operation " + dataOperation);
+						logger.debug("data " + data.getClass() + ", associated operation " + dataOperation.getClass());
 					}
+					logger.debug(attributes.get(fieldToUpdate).toString());
 					if (attributes.get(fieldToUpdate) != null) {
 						attributes.computeIfPresent(fieldToUpdate, dataOperation);
 					} else {
 						attributes.put(fieldToUpdate, data);
-						System.out.println(data);
 					}
 				}
 			});
-			ListenableFuture<Void> editResult = featureTable.updateFeatureAsync(feature);
-		    editResult.addDoneListener(() -> applyEdits(featureTable));
+
+			logger.debug("Applying edition");
+			AtomicBoolean done = new AtomicBoolean(false);
+			featureTable.updateFeatureAsync(feature).addDoneListener(() -> {
+				done.set(true);
+			});
+			await().untilTrue(done);
 		}
+
+		applyEdits(featureTable);
 	}
 
 	/**
-	 * For Numeric field only, this function returns the operation to be executed with the previous and next data value.
-	 * @param fieldToUpdate field name to update in the featureTable
-	 * @param dataOperation the single unite data operation manager
-	 * @param dataValueToUpdate data for update
+	 * Take off the operator if any, present in the first position of the
+	 * string. <code>+hit</code> will become <code>hit</code>
+	 * 
+	 * @param fieldName
+	 *            name of the field
+	 * @return the field name undecorated
 	 */
-	static BiFunction<String,? super Object,? extends Object> getBiFunction(final String fieldToUpdate, RecordAttributeDataOperation dataOperation, final Object dataValueToUpdate) {
+	private String fieldNameUndecorated(final String fieldName) {
+		return ("+-".indexOf(fieldName.charAt(0)) == -1) ? fieldName : fieldName.substring(1);
+	}
+
+	/**
+	 * For Numeric field only, this function returns the operation to be
+	 * executed with the previous and next data value.
+	 * 
+	 * @param fieldToUpdate
+	 *            field name to update in the featureTable
+	 * @param dataOperation
+	 *            the single unite data operation manager
+	 * @param dataValueToUpdate
+	 *            data for update
+	 */
+	static BiFunction<String, ? super Object, ? extends Object> getBiFunction(final String fieldToUpdate,
+			RecordAttributeDataOperation dataOperation, final Object dataValueToUpdate) {
 
 		if (dataValueToUpdate instanceof String) {
 			return dataOperation.setString;
 		}
-		
+
 		char operator = fieldToUpdate.charAt(0);
 		// The is no operator. This is just an affectation
 		if ("+-".indexOf(operator) == -1) {
 			if (dataValueToUpdate instanceof Integer) {
 				return dataOperation.setInteger;
-			} 
+			}
 			if (dataValueToUpdate instanceof Double) {
 				return dataOperation.setDouble;
 			}
 			throw new RuntimeException(dataValueToUpdate.getClass().getName() + " is not implemented yet!");
 		}
-		
+
 		if (operator == '+') {
 			if (dataValueToUpdate instanceof Integer) {
 				return dataOperation.addInteger;
-			} 
+			}
 			if (dataValueToUpdate instanceof Double) {
 				return dataOperation.addDouble;
 			}
 			throw new RuntimeException(dataValueToUpdate.getClass().getName() + " is not implemented yet!");
 		}
-		
+
 		if (operator == '-') {
 			if (dataValueToUpdate instanceof Integer) {
 				return dataOperation.subtractInteger;
-			} 
+			}
 			if (dataValueToUpdate instanceof Double) {
 				return dataOperation.subtractDouble;
 			}
@@ -424,25 +471,27 @@ public class ArcGISDataManager {
 
 		throw new RuntimeException("WTF : Should not pass here");
 	}
-	
 
 	/**
-	 * Reinitialize the featureLayer.
-	 * <br/>This re-initialization is executed to prevent the call
-	 * <br/><code>FeatureLayer featureLayer = new FeatureLayer(featureTable);</code> 
-	 * <br/>from the error message <b>"data_source is already owned."</b>
-	 * <br/><i>This method is public in order to be invoked from Unit test</i>
+	 * Reinitialize the featureLayer. <br/>
+	 * This re-initialization is executed to prevent the call <br/>
+	 * <code>FeatureLayer featureLayer = new FeatureLayer(featureTable);</code>
+	 * <br/>
+	 * from the error message <b>"data_source is already owned."</b> <br/>
+	 * <i>This method is public in order to be invoked from Unit test</i>
 	 */
 	public void reinitializeFeatureTable() {
 		final AtomicBoolean reloadDone = new AtomicBoolean(false);
+		if ((featureTable != null) && (featureTable.getLoadStatus() == LoadStatus.LOADED)) {
+			featureTable.clearCache(false);
+		}
 		String uri = featureTable.getUri();
 		featureTable = new ServiceFeatureTable(uri);
 		featureTable.loadAsync();
-		featureTable.addDoneLoadingListener(() ->reloadDone.set(true));
+		featureTable.addDoneLoadingListener(() -> reloadDone.set(true));
 		await().untilTrue(reloadDone);
 	}
-	
-	
+
 	/**
 	 * Select a record in the featureTable in a circle around a latitude and a
 	 * longitude.
@@ -458,23 +507,24 @@ public class ArcGISDataManager {
 
 		SpatialReference spatialReference = getSpatialReference(settings);
 
-		Geometry geometry = null;
-		if (featureTable.getGeometryType().equals(GeometryType.POINT)) {
-			geometry = createPoint(record, settings);
+		if (!(featureTable.getGeometryType().equals(GeometryType.POINT))) {
+			throw new RuntimeException("WTF SHOULD NOT PASS HERE !");
 		}
+		final Point geometry = createPoint(record, settings);
+		
+		
 
-		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
+
+	int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
 				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS) : DEFAULT_RADIUS;
-
-		Polygon searchAround = GeometryEngine.buffer(geometry, radius);
-
+				
+		final Polygon searchAround = GeometryEngine.buffer(geometry, radius);
+		
 		QueryParameters queryParams = new QueryParameters();
 		queryParams.setGeometry(searchAround);
 		queryParams.setOutSpatialReference(spatialReference);
 		queryParams.setSpatialRelationship(SpatialRelationship.INTERSECTS);
 		
-		final FeatureLayer featureLayer = new FeatureLayer(featureTable);
-
 		final ListenableFuture<FeatureQueryResult> future = featureLayer.selectFeaturesAsync(queryParams,
 				SelectionMode.NEW);
 
@@ -485,21 +535,29 @@ public class ArcGISDataManager {
 		// returning the result
 		AtomicBoolean queryDone = new AtomicBoolean(false);
 		future.addDoneListener(() -> {
+			
+			final ComponentLog logger = ArcGISDataManager.this.logger;
 			FeatureQueryResult result;
 			try {
 				result = future.get();
 			} catch (Exception e) {
-				ArcGISDataManager.this.logger.error(ExceptionUtils.getStackTrace(e));
+				logger.error(ExceptionUtils.getStackTrace(e));
 				throw new RuntimeException(e);
 			}
-
 			final AtomicReference<Double> closestDistance = new AtomicReference<Double>(new Double(Double.MAX_VALUE));
 			result.forEach( feature -> {
-				double distance = GeometryEngine.distanceBetween(searchAround, feature.getGeometry());
+				ArcGISFeature arcgisfeature = (ArcGISFeature) feature;
+				logger.debug("before distance calculation for the radius " + radius);
+				logger.debug(arcgisfeature.getGeometry().toJson());
+				if (arcgisfeature.getGeometry().getGeometryType() != GeometryType.POINT) {
+					throw new RuntimeException("WTF: Should not pass here. Unattempted type of geometry " + arcgisfeature.getGeometry());
+				} 
+				Point point = (Point) arcgisfeature.getGeometry();
+				double distance = ArcGISDataManager.distance (geometry.getX(), point.getX(), geometry.getY(), point.getY(), 0d, 0d); 
+				logger.debug("distance " + distance);
 				if (distance < closestDistance.get()) {
-					selectedFeature.set((ArcGISFeature) feature);
+					selectedFeature.set((ArcGISFeature) arcgisfeature);
 					closestDistance.set(distance);
-					ComponentLog logger = ArcGISDataManager.this.logger;
 					if (logger.isDebugEnabled()) {
 						Map<String, Object> attributes = selectedFeature.get().getAttributes();
 						logger.debug("Feature select " + attributes.get("name") + " @ the distance "
@@ -512,13 +570,17 @@ public class ArcGISDataManager {
 		await().untilTrue(queryDone);
 
 		if (selectedFeature.get() != null) {
-			queryDone.set(false);
-			selectedFeature.get().loadAsync();
-			selectedFeature.get().addDoneLoadingListener(() -> queryDone.set(true));
-			await().untilTrue(queryDone);
+			loadFeature (selectedFeature.get());
 		}
 		
 		return selectedFeature.get();
+	}
+
+	private void loadFeature(ArcGISFeature feature) {
+		AtomicBoolean queryDone = new AtomicBoolean(false);
+		feature.loadAsync();
+		feature.addDoneLoadingListener(() -> queryDone.set(true));
+		await().untilTrue(queryDone);
 	}
 
 	/**
@@ -566,7 +628,7 @@ public class ArcGISDataManager {
 				try {
 					res.get();
 					if (res.isDone()) {
-						final AtomicBoolean dataEditionTerminated = new AtomicBoolean(false);						
+						final AtomicBoolean dataEditionTerminated = new AtomicBoolean(false);
 						featureTable.applyEditsAsync().addDoneListener(() -> {
 							applyEdits(featureTable);
 							dataEditionTerminated.set(true);
@@ -668,29 +730,33 @@ public class ArcGISDataManager {
 	 * <i>The parameter-value "m" is not handled in this current release</i>
 	 * </p>
 	 *
-	 * @return
+	 * @param record
+	 *            actual record
+	 * @setting general settings associated to this record
+	 * @return a point
+	 * @throws Exception
 	 */
-	public Geometry createPoint(Map<String, String> records, Map<String, Object> settings) throws Exception {
+	public Point createPoint(Map<String, String> record, Map<String, Object> settings) throws Exception {
 
-		if (!((records.containsKey("x") && records.containsKey("y"))
-				|| (records.containsKey("latitude") && records.containsKey("longitude")))) {
+		if (!((record.containsKey("x") && record.containsKey("y"))
+				|| (record.containsKey("latitude") && record.containsKey("longitude")))) {
 			throw new Exception("Cannot create a point based on the received data");
 		}
 
 		SpatialReference spatialReference = getSpatialReference(settings);
 
-		if (records.containsKey("x") && records.containsKey("y")) {
-			double x = Double.parseDouble(records.get("x"));
-			double y = Double.parseDouble(records.get("y"));
-			if (records.containsKey("z")) {
-				double z = Double.parseDouble(records.get("z"));
+		if (record.containsKey("x") && record.containsKey("y")) {
+			double x = Double.parseDouble(record.get("x"));
+			double y = Double.parseDouble(record.get("y"));
+			if (record.containsKey("z")) {
+				double z = Double.parseDouble(record.get("z"));
 				return (spatialReference == null) ? new Point(x, y, z) : new Point(x, y, z, spatialReference);
 			}
 			return (spatialReference == null) ? new Point(x, y) : new Point(x, y, spatialReference);
 		}
-		if (records.containsKey("longitude") && records.containsKey("latitude")) {
-			double lattitude = Double.parseDouble(records.get("latitude"));
-			double longitude = Double.parseDouble(records.get("longitude"));
+		if (record.containsKey("longitude") && record.containsKey("latitude")) {
+			double lattitude = Double.parseDouble(record.get("latitude"));
+			double longitude = Double.parseDouble(record.get("longitude"));
 			return (spatialReference == null) ? new Point(lattitude, longitude)
 					: new Point(lattitude, longitude, spatialReference);
 		}
@@ -719,4 +785,41 @@ public class ArcGISDataManager {
 		}
 		return spatialReference;
 	}
+
+	/**
+	 * <font color="red"> INFO : Using this method instead of the
+	 * <code>GeometryEngine.distanceBetween</code> available in the ArcGIS java
+	 * client. <br/>
+	 * NIFI is freezing during execution, for an unknown reason. </br>
+	 * This behavior cannot be reproduced with a JUnit test. <br/>
+	 * <br/>
+	 * </font>
+	 * 
+	 * Calculate distance between two points in latitude and longitude taking
+	 * into account height difference. If you are not interested in height
+	 * difference pass 0.0.
+	 * 
+	 * lat1, lon1 Start point lat2, lon2 End point el1 Start altitude in meters
+	 * el2 End altitude in meters
+	 * 
+	 * @returns Distance in Meters
+	 */
+	public static double distance(double lat1, double lat2, double lon1, double lon2, double el1, double el2) {
+
+		final int R = 6371; // Radius of the earth
+
+		Double latDistance = Math.toRadians(lat2 - lat1);
+		Double lonDistance = Math.toRadians(lon2 - lon1);
+		Double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2) + Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+		Double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		double distance = R * c * 1000; // convert to meters
+
+		double height = el1 - el2;
+
+		distance = Math.pow(distance, 2) + Math.pow(height, 2);
+
+		return Math.sqrt(distance);
+	}
+
 }

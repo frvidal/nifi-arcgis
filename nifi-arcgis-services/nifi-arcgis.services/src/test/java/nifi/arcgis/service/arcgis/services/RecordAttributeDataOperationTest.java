@@ -20,7 +20,7 @@ public class RecordAttributeDataOperationTest {
 	public void addInteger() throws Exception {
 		Map<String, String> record = new HashMap<String, String>();
 		record.put("string", "new");
-		record.put("+int", "4");
+		record.put("int", "4");
 		
 		RecordAttributeDataOperation dataOperation = new RecordAttributeDataOperation (record);
 		
@@ -43,7 +43,7 @@ public class RecordAttributeDataOperationTest {
 	public void subtractInteger() throws Exception {
 		Map<String, String> record = new HashMap<String, String>();
 		record.put("string", "new");
-		record.put("-int", "4");
+		record.put("int", "4");
 		
 		RecordAttributeDataOperation dataOperation = new RecordAttributeDataOperation (record);
 		
