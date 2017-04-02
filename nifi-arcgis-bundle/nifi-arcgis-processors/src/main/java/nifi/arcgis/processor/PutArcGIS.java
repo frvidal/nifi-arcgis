@@ -16,16 +16,17 @@
  */
 package nifi.arcgis.processor;
 
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WEBMERCATOR;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO;
-
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -37,12 +38,17 @@ import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -57,6 +63,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -64,12 +71,15 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.provenance.lineage.FlowFileNode;
+import org.omg.CORBA.OMGVMCID;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import groovy.ui.SystemOutputInterceptor;
 import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
 import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
@@ -145,7 +155,7 @@ public class PutArcGIS extends AbstractProcessor {
 	 * Fields list to parse and send to the processor service the the data
 	 * operation
 	 */
-	private List<String> fields;
+	List<String> fields;
 
 	/**
 	 * List of fields involved in the <b>update</b> order. updateFieldList is a
@@ -235,16 +245,21 @@ public class PutArcGIS extends AbstractProcessor {
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
+		final FlowFile flowFile = session.get();
+		if (flowFile == null) {
+			return;
+		}
+
 		AtomicReference<List<Map<String, String>>> ref_dataParsed = new AtomicReference<List<Map<String, String>>>();
 		ref_dataParsed.set(new ArrayList<Map<String, String>>());
 		try {
 			final String typeOfFile = context.getProperty(TYPE_OF_FILE).getValue();
 			if (JSON.equals(typeOfFile)) {
-				handleJSONFlow(context, session, ref_dataParsed);
+				handleJSONFlow(flowFile, context, session, ref_dataParsed);
 			}
 
 			if (CSV.equals(typeOfFile)) {
-				handleCSVFlow(context, session, ref_dataParsed);
+				handleCSVFlow(flowFile, context, session, ref_dataParsed);
 			}
 
 			if (ATTRIBUTE.equals(typeOfFile)) {
@@ -254,13 +269,14 @@ public class PutArcGIS extends AbstractProcessor {
 
 		} catch (Exception e) {
 			getLogger().error(ExceptionUtils.getStackTrace(e));
-			session.transfer(session.get(), FAILED);
+			session.transfer(flowFile, FAILED);
 		}
 	}
 
 	/**
 	 * Parse the <b><big>JSON</big></b> Flow and save it in an atomic reference.
 	 * 
+	 * @param flowFile current flowFile treated
 	 * @param context
 	 *            the current flow context
 	 * @param session
@@ -271,13 +287,9 @@ public class PutArcGIS extends AbstractProcessor {
 	 * 
 	 * @throws ProcessException
 	 */
-	private void handleJSONFlow(final ProcessContext context, final ProcessSession session,
+	private void handleJSONFlow(final FlowFile flowFile, final ProcessContext context, final ProcessSession session,
 			final AtomicReference<List<Map<String, String>>> ref_dataParsed) throws ProcessException {
 
-		final FlowFile flowFile = session.get();
-		if (flowFile == null) {
-			return;
-		}
 
 		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
 		session.read(flowFile, (InputStream inputStream) -> {
@@ -295,6 +307,7 @@ public class PutArcGIS extends AbstractProcessor {
 	/**
 	 * Parse the <b><big>CSV</big></b> Flow and save it in an atomic reference.
 	 * 
+	 * @param flowFile current flowFile treated
 	 * @param context
 	 *            the current flow context
 	 * @param session
@@ -304,14 +317,8 @@ public class PutArcGIS extends AbstractProcessor {
 	 * 
 	 * @throws ProcessException
 	 */
-	private void handleCSVFlow(final ProcessContext context, final ProcessSession session,
+	private void handleCSVFlow(final FlowFile flowFile, final ProcessContext context, final ProcessSession session,
 			final AtomicReference<List<Map<String, String>>> ref_dataParsed) throws ProcessException {
-
-		
-		final FlowFile flowFile = session.get();
-		if (flowFile == null) {
-			return;
-		}
 
 		final String charSetName = context.getProperty(CHARACTER_SET_IN).getValue();
 		Map<String, String> data = flowFile.getAttributes();
@@ -354,7 +361,13 @@ public class PutArcGIS extends AbstractProcessor {
 		}
 		chrono.start();
 
-		//		agreagreData(AtomicReference<List<Map<String, String>>> ref_dataParsed);
+		Map<String, Object> settings = initSettings(context);
+		
+		
+		List<Map<String, String>> optimizedData = optimizationDataForUpdate(ref_dataParsed.get(), settings);
+		if (optimizedData !=null ) {
+			ref_dataParsed.set(optimizedData);
+		}
 		
 		ArcGISLayerServiceAPI service = context.getProperty(ARCGIS_SERVICE)
 				.asControllerService(ArcGISLayerServiceAPI.class);
@@ -367,25 +380,6 @@ public class PutArcGIS extends AbstractProcessor {
 			return;
 		}
 
-		Map<String, Object> settings = new HashMap<String, Object>();
-		final String spatialReference = context.getProperty(SPATIAL_REFERENCE).getValue();
-		if (spatialReference != null && spatialReference.length() > 0) {
-			settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
-		}
-		final String dataOperation = context.getProperty(TYPE_OF_DATA_OPERATION).getValue();
-		getLogger().debug(ArcGISLayerServiceAPI.OPERATION + " = " + dataOperation);
-		settings.put(ArcGISLayerServiceAPI.OPERATION, dataOperation);
-		//TODO For this release, only one type of query is supported
-		// This behavior is implemented by default
-		if ( (ArcGISLayerServiceAPI.OPERATION_UPDATE.equals(dataOperation)) ||  
-				(ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT.equals(dataOperation))) {
-			settings.put(TYPE_OF_QUERY, TYPE_OF_QUERY_GEO);
-		}
-		
-		if (getLogger().isDebugEnabled()) {
-			getLogger().debug("Setting up the update field list " + fieldsToUpdate.toString());
-		}
-		settings.put(ArcGISLayerServiceAPI.UPDATE_FIELD_LIST, fieldsToUpdate);
 		
 		int quotity = Integer.valueOf(context.getProperty(QUOTITY).getValue());
 		final int nb_total_records = ref_dataParsed.get().size();
@@ -420,7 +414,95 @@ public class PutArcGIS extends AbstractProcessor {
 		session.transfer(flowFile, SUCCESS);
 	}
 
+	/**
+	 * Initialize the settings for the data serviceProcessor.
+	 * @param context actual context of the processor
+	 * @return the settings map
+	 */
+	Map<String, Object> initSettings (final ProcessContext context) {
+		
+		Map<String, Object> settings = new HashMap<String, Object>();
+		final String spatialReference = context.getProperty(SPATIAL_REFERENCE).getValue();
+		if (spatialReference != null && spatialReference.length() > 0) {
+			settings.put(SPATIAL_REFERENCE.getName(), spatialReference);
+		}
+		
+		final String dataOperation = context.getProperty(TYPE_OF_DATA_OPERATION).getValue();
+		getLogger().debug(ArcGISLayerServiceAPI.OPERATION + " = " + dataOperation);
+		settings.put(ArcGISLayerServiceAPI.OPERATION, dataOperation);
+		
+		//TODO For this release, only one type of query is supported
+		// This behavior is implemented by default
+		if ( (ArcGISLayerServiceAPI.OPERATION_UPDATE.equals(dataOperation)) ||  
+				(ArcGISLayerServiceAPI.OPERATION_UPDATE_OR_INSERT.equals(dataOperation))) {
+			settings.put(TYPE_OF_QUERY, TYPE_OF_QUERY_GEO);
+		}
+		
+		if (getLogger().isDebugEnabled()) {
+			getLogger().debug("Setting up the update field list " + fieldsToUpdate.toString());
+		}
+		settings.put(ArcGISLayerServiceAPI.UPDATE_FIELD_LIST, fieldsToUpdate);
+		return settings;
+	}
 	
+	
+	/**
+	 * Optimize the data for update if the update field list orders numeric aggregation<br/>
+	 * Such fields are declared list the field hit present <code><+hit></code><br/>
+	 * This function return <b><big><code>null</code></big></b> if no optimization is possible for the current data context.
+	 * 
+	 * @param list of parsed records for optimization
+	 * @settings current settings
+	 */
+	@SuppressWarnings("unchecked")
+	public List<Map<String, String>> optimizationDataForUpdate(List<Map<String, String>> records, final Map<String, Object> settings) {
+		
+		if (OPERATION_INSERT.equals(settings.get(OPERATION))) {
+			return null;
+		}
+		
+		List<String> list = (List<String>) settings.get(UPDATE_FIELD_LIST);
+		if ((list == null) || list.isEmpty()) { 
+			return null;
+		}
+
+		if (list.stream().filter (v -> ("+-".indexOf(v.charAt(0))==-1) ).count() != 0) {
+			return null;
+		}
+
+		Map<String, List<Map<String, String>>> recordsGroupedLatitudeLongitude = records
+			    .stream()
+			    .collect(Collectors.groupingBy(p -> p.get("latitude") + p.get("longitude")));
+		
+		final List<Map<String, String>> optimizedRecords = new ArrayList<Map<String, String>>();
+		recordsGroupedLatitudeLongitude.forEach ( (k,v) -> {
+			optimizedRecords.add (
+				v.stream().reduce( new HashMap<String, String>(), (m1, m2) -> {
+				int hit1 = (!m1.containsKey("hit")) ? 0 : Integer.valueOf(m1.get("hit"));
+				int hit2 = Integer.valueOf(m2.get("hit"));
+				m1.putAll(m2);
+				m1.put("hit", String.valueOf(hit1+hit2));
+				return m1;
+			}));
+		});
+		
+		if (getLogger().isDebugEnabled()) {
+			final ComponentLog logger = getLogger();
+			optimizedRecords.forEach(v->logger.debug(v.get("latitude") + "|" + v.get("longitude") + " : " +v.get("hit")));
+		}
+		
+		/*
+		Comparator<Map<String, String>> mapComparator = new Comparator<Map<String, String>>() {
+		    public int compare(Map<String, String> m1, Map<String, String> m2) {
+		        return m1.get("latitude").compareTo(m2.get("latitude")) + m1.get("longitude").compareTo(m2.get("longitude"));
+		    }
+		};
+		
+		Map<String, String> sum = records.stream().collect(Collectors.groupingBy(Map::get));
+
+		*/
+		return optimizedRecords;
+	}
 	
 	/**
 	 * Parse a fields file and return its content in a collection.

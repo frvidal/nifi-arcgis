@@ -409,7 +409,7 @@ public class ArcGISDataManager {
 
 	/**
 	 * Take off the operator if any, present in the first position of the
-	 * string. <code>+hit</code> will become <code>hit</code>
+	 * string. <code>+hit</code> will become <code>hit</ccreatode>
 	 * 
 	 * @param fieldName
 	 *            name of the field
@@ -746,23 +746,41 @@ public class ArcGISDataManager {
 		SpatialReference spatialReference = getSpatialReference(settings);
 
 		if (record.containsKey("x") && record.containsKey("y")) {
-			double x = Double.parseDouble(record.get("x"));
-			double y = Double.parseDouble(record.get("y"));
+			double x = Double.parseDouble(getNotNull(record,"x"));
+			double y = Double.parseDouble(getNotNull(record,"y"));
 			if (record.containsKey("z")) {
-				double z = Double.parseDouble(record.get("z"));
+				double z = Double.parseDouble(getNotNull(record,"z"));
 				return (spatialReference == null) ? new Point(x, y, z) : new Point(x, y, z, spatialReference);
 			}
 			return (spatialReference == null) ? new Point(x, y) : new Point(x, y, spatialReference);
 		}
 		if (record.containsKey("longitude") && record.containsKey("latitude")) {
-			double lattitude = Double.parseDouble(record.get("latitude"));
-			double longitude = Double.parseDouble(record.get("longitude"));
+			double lattitude = Double.parseDouble(getNotNull(record,"latitude"));
+			double longitude = Double.parseDouble(getNotNull(record,"longitude"));
 			return (spatialReference == null) ? new Point(lattitude, longitude)
 					: new Point(lattitude, longitude, spatialReference);
 		}
 		throw new Exception("Should not pass here!");
 	}
 
+	/**
+	 * Test and return the value mapped to the key.
+	 * <br/>If the value is null, an exception is thrown
+	 * @param record the record in a Map format
+	 * @param key the key searched
+	 * @return the non null value
+	 * @throws Exception if the value map to the key is null
+	 */
+	private String getNotNull(Map<String, String> record, String key) throws Exception {
+		String value = record.get(key);
+		if (record.get(key) == null) {
+			Exception e = new Exception ("key value is null " + key);
+			record.forEach((k,v)->{ logger.error(k); logger.error(v); });
+			throw e;
+		} else {
+			return value;
+		}			
+	}
 	/**
 	 * @param settings
 	 *            the actual data settings setup in the processor

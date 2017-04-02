@@ -12,11 +12,26 @@ import org.apache.nifi.logging.ComponentLog;
  */
 public class Watch {
 
+	/**
+	 * Starting & ending time for the trigger event
+	 */
 	long start, end;
 	
-	long former_total_number_of_lines_treated = 0;
-	long total_number_of_lines_treated = 0;
-	long total_duration = 0;
+	/**
+	 * Previous number of lines treated. 
+	 * It's a working instance.
+	 */
+	float former_total_number_of_lines_treated = 0;
+
+	/**
+	 * Total number of lines treated
+	 */
+	float total_number_of_lines_treated = 0;
+	
+	/**
+	 * Total processing time 
+	 */
+	float total_duration = 0;
 
 	final ComponentLog logger;
 	
@@ -29,14 +44,14 @@ public class Watch {
 	}
 	
 	/**
-	 * get and keep the starting time.
+	 * Get and keep the starting time.
 	 */
 	public void start() {
 		start = System.currentTimeMillis();
 	}
 	
 	/**
-	 * get and keep the ending time.
+	 * Get and keep the ending time.
 	 */
 	public void end() {
 		end = System.currentTimeMillis();
@@ -50,17 +65,12 @@ public class Watch {
 		
 		total_number_of_lines_treated +=  number_of_lines_treated;
 		total_duration +=  duration;
-		logger.info(String.valueOf(number_of_lines_treated));
-		logger.info(String.valueOf(total_number_of_lines_treated));
-		logger.info(String.valueOf(duration));
-		logger.info(String.valueOf((float) (total_number_of_lines_treated/total_duration)));
-		logger.info(String.valueOf(String.valueOf(former_total_number_of_lines_treated+1000)));
 		
 		if ( total_number_of_lines_treated > (former_total_number_of_lines_treated+1000) ) {
-			float mean = ((float) (total_number_of_lines_treated/total_duration)) * 1000;
+			float mean = ((float) ((total_number_of_lines_treated*1000)/total_duration));
 			logger.info("Speed " + String.valueOf( mean));
 			former_total_number_of_lines_treated = total_number_of_lines_treated;
 		}
-}
+	}
 	
 }

@@ -4,11 +4,19 @@
 package nifi.arcgis.processor;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNull;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -16,7 +24,10 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
-import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
+import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
+
 
 /**
  * Testing a JSON file entry.
@@ -49,7 +60,7 @@ public class PutArcGIS_JSON {
         testRunner.setProperty(PutArcGIS.FIELD_LIST_INSERT, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ok");
         testRunner.setProperty(PutArcGIS.FIELD_LIST_UPDATE, this.getClass().getClassLoader().getResource(".").getFile() + "/header-ok");
 
-        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, ArcGISLayerServiceAPI.OPERATION_INSERT);
+        testRunner.setProperty(PutArcGIS.TYPE_OF_DATA_OPERATION, OPERATION_INSERT);
 
         // the ProcessorService is supposed to validate the column lists
         // We mock this behavior in this MockControllerService
