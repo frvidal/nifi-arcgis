@@ -512,10 +512,7 @@ public class ArcGISDataManager {
 		}
 		final Point geometry = createPoint(record, settings);
 		
-		
-
-
-	int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
+		int radius = (settings.containsKey(ArcGISLayerServiceAPI.RADIUS))
 				? (Integer) settings.get(ArcGISLayerServiceAPI.RADIUS) : DEFAULT_RADIUS;
 				
 		final Polygon searchAround = GeometryEngine.buffer(geometry, radius);
@@ -547,8 +544,6 @@ public class ArcGISDataManager {
 			final AtomicReference<Double> closestDistance = new AtomicReference<Double>(new Double(Double.MAX_VALUE));
 			result.forEach( feature -> {
 				ArcGISFeature arcgisfeature = (ArcGISFeature) feature;
-				logger.debug("before distance calculation for the radius " + radius);
-				logger.debug(arcgisfeature.getGeometry().toJson());
 				if (arcgisfeature.getGeometry().getGeometryType() != GeometryType.POINT) {
 					throw new RuntimeException("WTF: Should not pass here. Unattempted type of geometry " + arcgisfeature.getGeometry());
 				} 
@@ -595,7 +590,6 @@ public class ArcGISDataManager {
 	public void insertData(final List<Map<String, String>> records, final Map<String, Object> settings)
 			throws Exception {
 
-		final AtomicBoolean dataOperationTerminated = new AtomicBoolean(false);
 		if (!featureTable.getGeometryType().equals(GeometryType.POINT)) {
 			throw new RuntimeException("What's the fuck... Other geometries than point are not implemented yet !");
 		}
@@ -622,31 +616,7 @@ public class ArcGISDataManager {
 
 		logger.debug("Adding " + features.size() + " features...");
 		if (featureTable.canAdd()) {
-
-			ListenableFuture<Void> res = featureTable.addFeaturesAsync(features);
-			res.addDoneListener(() -> {
-				try {
-					res.get();
-					if (res.isDone()) {
-						final AtomicBoolean dataEditionTerminated = new AtomicBoolean(false);
-						featureTable.applyEditsAsync().addDoneListener(() -> {
-							applyEdits(featureTable);
-							dataEditionTerminated.set(true);
-						});
-						await().untilTrue(dataEditionTerminated);
-					}
-				} catch (Exception e) {
-					ArcGISDataManager.this.logger
-							.error("Error while adding FeaturesAsync :\\n" + ExceptionUtils.getStackTrace(e));
-
-				} finally {
-					dataOperationTerminated.set(true);
-				}
-
-			});
-			await().untilTrue(dataOperationTerminated);
-			logger.debug("dataOperationTerminated");
-
+			applyEdits(featureTable);
 		} else {
 			new Exception("Cannot add feature into " + featureTable.getTableName()).printStackTrace();
 		}

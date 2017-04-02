@@ -24,8 +24,6 @@ import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.SPATIAL_REFERENCE_WGS84;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.TYPE_OF_QUERY_GEO;
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
-import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.UPDATE_FIELD_LIST;
 
 import java.io.BufferedReader;
@@ -38,16 +36,12 @@ import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -71,15 +65,12 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.provenance.lineage.FlowFileNode;
-import org.omg.CORBA.OMGVMCID;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import groovy.ui.SystemOutputInterceptor;
 import nifi.arcgis.processor.utility.CsvManager;
 import nifi.arcgis.processor.utility.FileManager;
 import nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI;
@@ -461,12 +452,14 @@ public class PutArcGIS extends AbstractProcessor {
 			return null;
 		}
 		
-		List<String> list = (List<String>) settings.get(UPDATE_FIELD_LIST);
-		if ((list == null) || list.isEmpty()) { 
+		List<String> listUpdateFields = (List<String>) settings.get(UPDATE_FIELD_LIST);
+		if ((listUpdateFields == null) || listUpdateFields.isEmpty()) { 
 			return null;
 		}
+		final List<String> updateFields = listUpdateFields.stream().map( uf -> uf.substring(1)).collect(Collectors.toList());
 
-		if (list.stream().filter (v -> ("+-".indexOf(v.charAt(0))==-1) ).count() != 0) {
+		
+		if (listUpdateFields.stream().filter (v -> ("+-".indexOf(v.charAt(0))==-1) ).count() != 0) {
 			return null;
 		}
 
@@ -478,11 +471,25 @@ public class PutArcGIS extends AbstractProcessor {
 		recordsGroupedLatitudeLongitude.forEach ( (k,v) -> {
 			optimizedRecords.add (
 				v.stream().reduce( new HashMap<String, String>(), (m1, m2) -> {
-				int hit1 = (!m1.containsKey("hit")) ? 0 : Integer.valueOf(m1.get("hit"));
-				int hit2 = Integer.valueOf(m2.get("hit"));
-				m1.putAll(m2);
-				m1.put("hit", String.valueOf(hit1+hit2));
-				return m1;
+					final List<Double> agregatedData = new ArrayList<Double>();
+					
+					// We save the data state
+					updateFields.forEach(f -> {
+						agregatedData.add((!m1.containsKey(f)) ? 0 : Double.valueOf(m1.get(f)));
+						agregatedData.add(Double.valueOf(m2.get(f)));
+					});
+					
+					m1.putAll(m2);
+
+					updateFields.forEach(f -> {
+						Double d1 = agregatedData.remove(0);
+						Double d2 = agregatedData.remove(0);
+						String s = String.valueOf(d1+d2);
+						m1.put(f,  (".0".equals(s.substring(s.length()-2)) 
+									? s.substring(0, s.length()-2) : s) );
+					});
+					
+					return m1;
 			}));
 		});
 		
@@ -491,16 +498,6 @@ public class PutArcGIS extends AbstractProcessor {
 			optimizedRecords.forEach(v->logger.debug(v.get("latitude") + "|" + v.get("longitude") + " : " +v.get("hit")));
 		}
 		
-		/*
-		Comparator<Map<String, String>> mapComparator = new Comparator<Map<String, String>>() {
-		    public int compare(Map<String, String> m1, Map<String, String> m2) {
-		        return m1.get("latitude").compareTo(m2.get("latitude")) + m1.get("longitude").compareTo(m2.get("longitude"));
-		    }
-		};
-		
-		Map<String, String> sum = records.stream().collect(Collectors.groupingBy(Map::get));
-
-		*/
 		return optimizedRecords;
 	}
 	

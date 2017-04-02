@@ -24,6 +24,8 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
+import groovy.ui.SystemOutputInterceptor;
+
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_INSERT;
 import static nifi.arcgis.service.arcgis.services.ArcGISLayerServiceAPI.OPERATION_UPDATE;
@@ -128,7 +130,12 @@ public class PutArcGISOptimization {
     	testRunner.assertValid();
     	
     	List<Map<String, String>> records = testRunner.getControllerService("arcgis-service", MockControllerService.class).getExecuteArg0();
-    	assertEquals(5, records.size());
+    	assertEquals("Invalid for " + records.get(0).get("name"), 2, Double.valueOf(records.get(0).get("hit")).intValue());
+    	assertEquals("Invalid for " + records.get(1).get("name"), 3, Double.valueOf(records.get(1).get("hit")).intValue());
+    	assertEquals("Invalid for " + records.get(2).get("name"), 2, Double.valueOf(records.get(2).get("hit")).intValue());
+    	assertEquals("Invalid for " + records.get(3).get("name"), 6, Double.valueOf(records.get(3).get("hit")).intValue());
+    	assertEquals("Invalid for " + records.get(4).get("name"), 2, Double.valueOf(records.get(4).get("hit")).intValue());
+    	
     }
  
 }
