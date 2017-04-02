@@ -419,7 +419,9 @@ public class PutArcGIS extends AbstractProcessor {
 		}
 		
 		final String dataOperation = context.getProperty(TYPE_OF_DATA_OPERATION).getValue();
-		getLogger().debug(ArcGISLayerServiceAPI.OPERATION + " = " + dataOperation);
+		if (getLogger().isDebugEnabled()) {
+			getLogger().debug("Current operation " + ArcGISLayerServiceAPI.OPERATION + " = " + dataOperation);
+		}
 		settings.put(ArcGISLayerServiceAPI.OPERATION, dataOperation);
 		
 		//TODO For this release, only one type of query is supported
@@ -456,12 +458,12 @@ public class PutArcGIS extends AbstractProcessor {
 		if ((listUpdateFields == null) || listUpdateFields.isEmpty()) { 
 			return null;
 		}
-		final List<String> updateFields = listUpdateFields.stream().map( uf -> uf.substring(1)).collect(Collectors.toList());
 
-		
 		if (listUpdateFields.stream().filter (v -> ("+-".indexOf(v.charAt(0))==-1) ).count() != 0) {
 			return null;
 		}
+
+		final List<String> updateFields = listUpdateFields.stream().map( uf -> uf.substring(1)).collect(Collectors.toList());
 
 		Map<String, List<Map<String, String>>> recordsGroupedLatitudeLongitude = records
 			    .stream()
@@ -471,6 +473,7 @@ public class PutArcGIS extends AbstractProcessor {
 		recordsGroupedLatitudeLongitude.forEach ( (k,v) -> {
 			optimizedRecords.add (
 				v.stream().reduce( new HashMap<String, String>(), (m1, m2) -> {
+		
 					final List<Double> agregatedData = new ArrayList<Double>();
 					
 					// We save the data state
@@ -481,10 +484,12 @@ public class PutArcGIS extends AbstractProcessor {
 					
 					m1.putAll(m2);
 
+					// We compute the data saved
 					updateFields.forEach(f -> {
 						Double d1 = agregatedData.remove(0);
 						Double d2 = agregatedData.remove(0);
 						String s = String.valueOf(d1+d2);
+						// We extract the suffix ".0" to allow an Integer transformation later on 
 						m1.put(f,  (".0".equals(s.substring(s.length()-2)) 
 									? s.substring(0, s.length()-2) : s) );
 					});
