@@ -13,6 +13,11 @@ import org.apache.nifi.logging.ComponentLog;
 public class Watch {
 
 	/**
+	 * Threshold of display.
+	 */
+	public final static int THRESHOLD = 1000;
+	
+	/**
 	 * Starting & ending time for the trigger event
 	 */
 	long start, end;
@@ -59,6 +64,7 @@ public class Watch {
 	
 	/**
 	 * Display the global performance of the data-processing.
+	 * @param number_of_lines_treated number of lines treated (without underscore)
 	 */
 	public void display(long number_of_lines_treated) {
 		long duration = end - start;
@@ -66,9 +72,9 @@ public class Watch {
 		total_number_of_lines_treated +=  number_of_lines_treated;
 		total_duration +=  duration;
 		
-		if ( total_number_of_lines_treated > (former_total_number_of_lines_treated+1000) ) {
-			float mean = ((float) ((total_number_of_lines_treated*1000)/total_duration));
-			logger.info("Speed " + String.valueOf( mean));
+		if ( total_number_of_lines_treated > (former_total_number_of_lines_treated+THRESHOLD) ) {
+			float mean = ((float) ((total_number_of_lines_treated*THRESHOLD)/total_duration));
+			logger.info("Speed for " + String.valueOf(THRESHOLD) + " : " + String.valueOf( mean));
 			former_total_number_of_lines_treated = total_number_of_lines_treated;
 		}
 	}
